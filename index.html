@@ -199,7 +199,7 @@ textarea{font-family:var(--sans);font-size:13px;resize:none;height:68px;line-hei
  
 <script>
 var calls = [], selected = new Set(), cfg = {}, lastDebug = null;
-var PROXY = "https://corsproxy.io/";
+var PROXY = "https://corsproxy.io/?url=";
  
 var PRESETS = {
   trends: "Analyze these support call transcripts and identify the top recurring themes and trends. What are customers calling about most often? Group similar issues and rank by frequency.",
@@ -257,8 +257,9 @@ function saveCfg() {
  
 async function aircallFetch(path) {
   var creds = btoa(cfg.aircallId+":"+cfg.aircallToken);
-  var r = await fetch(PROXY+"?"+encodeURIComponent("https://api.aircall.io/v1/"+path), {
-    headers: { "Authorization": "Basic "+creds }
+  var url = "https://api.aircall.io/v1/"+path;
+  var r = await fetch(PROXY+encodeURIComponent(url), {
+    headers: { "Authorization": "Basic "+creds, "x-cors-api-key": "temp_guest" }
   });
   return r;
 }
