@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aircall Transcript Analyzer</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0e0f11;--surface:#16181c;--surface2:#1e2128;--border:#2a2d35;--border2:#363a45;--accent:#00e5a0;--accent2:#00b87a;--adim:rgba(0,229,160,0.08);--text:#e8eaf0;--text2:#9098a8;--text3:#5a6070;--red:#ff5c5c;--yellow:#ffc043;--mono:"IBM Plex Mono",monospace;--sans:"IBM Plex Sans",sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;min-height:100vh;display:flex;flex-direction:column}
+header{border-bottom:1px solid var(--border);padding:0 32px;height:56px;display:flex;align-items:center;justify-content:space-between;background:var(--surface);position:sticky;top:0;z-index:100}
+.logo{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:13px;font-weight:600;letter-spacing:.05em}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.app{display:grid;grid-template-columns:300px 1fr;flex:1;min-height:calc(100vh - 56px)}
+.sidebar{border-right:1px solid var(--border);display:flex;flex-direction:column;background:var(--surface)}
+.sec{padding:20px;border-bottom:1px solid var(--border)}
+.sec-label{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.12em;color:var(--text3);text-transform:uppercase;margin-bottom:12px}
+.ig{margin-bottom:10px}
+.ig label{display:block;font-size:11px;color:var(--text2);margin-bottom:4px;font-family:var(--mono)}
+input,select,textarea{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px 10px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;transition:border-color .15s}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+select option{background:var(--surface2)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 14px;border-radius:4px;border:1px solid var(--border);cursor:pointer;font-family:var(--mono);font-size:12px;font-weight:500;background:transparent;color:var(--text2);transition:all .15s;width:100%}
+.btn:hover{border-color:var(--border2);color:var(--text)}
+.btn-primary{background:var(--accent);color:#000;border-color:var(--accent)}
+.btn-primary:hover{background:var(--accent2);border-color:var(--accent2)}
+.btn-primary:disabled{opacity:.4;cursor:not-allowed}
+.list-hdr{padding:12px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}
+.call-count{font-family:var(--mono);font-size:11px;color:var(--text3)}
+.call-list{flex:1;overflow-y:auto}
+.call-list::-webkit-scrollbar{width:4px}
+.call-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+.call-item{padding:10px 20px;cursor:pointer;border-left:3px solid transparent;display:flex;align-items:flex-start;gap:10px;transition:background .1s}
+.call-item:hover{background:var(--surface2)}
+.call-item.sel{border-left-color:var(--accent);background:var(--adim)}
+.chk{width:14px;height:14px;border:1px solid var(--border2);border-radius:3px;flex-shrink:0;margin-top:2px;transition:all .1s}
+.call-item.sel .chk{background:var(--accent);border-color:var(--accent)}
+.cname{font-size:12px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px}
+.cmeta{display:flex;gap:6px;flex-wrap:wrap}
+.cdate,.cdur{font-family:var(--mono);font-size:10px;color:var(--text3)}
+.tag{font-family:var(--mono);font-size:9px;padding:1px 5px;border-radius:2px;text-transform:uppercase}
+.tag-in{background:rgba(0,229,160,.1);color:var(--accent)}
+.tag-out{background:rgba(100,120,255,.1);color:#8899ff}
+.tag-no{background:rgba(255,92,92,.1);color:var(--red)}
+.tag-yes{background:rgba(0,229,160,.15);color:var(--accent)}
+.empty-st{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 20px;text-align:center;color:var(--text3);gap:8px}
+.main{display:flex;flex-direction:column;overflow:hidden}
+.toolbar{padding:14px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;background:var(--surface);flex-wrap:wrap}
+.badge{font-family:var(--mono);font-size:11px;padding:4px 10px;background:var(--adim);color:var(--accent);border-radius:3px;border:1px solid rgba(0,229,160,.2)}
+.tarea{overflow-y:auto;flex:1;padding:24px}
+.tarea::-webkit-scrollbar{width:4px}
+.tarea::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+.welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:300px;gap:12px;color:var(--text3);text-align:center}
+.tcard{background:var(--surface);border:1px solid var(--border);border-radius:6px;margin-bottom:12px;overflow:hidden}
+.tcard-hdr{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--surface2)}
+.tcard-title{font-size:12px;font-weight:500}
+.tcard-meta{font-family:var(--mono);font-size:10px;color:var(--text3)}
+.tbody{padding:16px;font-size:11px;line-height:1.7;color:var(--text2);white-space:pre-wrap;font-family:var(--mono);max-height:250px;overflow-y:auto}
+.result{background:var(--surface);border:1px solid rgba(0,229,160,.25);border-radius:6px;margin-bottom:12px;overflow:hidden}
+.result-hdr{padding:12px 16px;border-bottom:1px solid var(--border);background:var(--adim);display:flex;align-items:center;gap:8px}
+.result-title{font-family:var(--mono);font-size:11px;font-weight:600;color:var(--accent);flex:1;text-transform:uppercase;letter-spacing:.05em}
+.result-body{padding:16px;font-size:13px;line-height:1.75;color:var(--text);white-space:pre-wrap}
+.dbg{background:var(--surface);border:1px solid rgba(255,192,67,.4);border-radius:6px;margin-bottom:12px}
+.dbg-hdr{padding:12px 16px;background:rgba(255,192,67,.08);border-bottom:1px solid var(--border);font-family:var(--mono);font-size:11px;color:var(--yellow);font-weight:600}
+.dbg-body{padding:16px;font-family:var(--mono);font-size:11px;line-height:1.6;color:var(--text2);white-space:pre-wrap;overflow-x:auto}
+.prompt-panel{border-top:1px solid var(--border);padding:16px 24px;background:var(--surface)}
+.plabel{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--text3);text-transform:uppercase;margin-bottom:8px}
+.presets{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.preset{font-family:var(--mono);font-size:10px;padding:4px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:3px;color:var(--text2);cursor:pointer;transition:all .1s}
+.preset:hover{border-color:var(--accent);color:var(--accent)}
+.prow{display:flex;gap:8px}
+textarea{font-family:var(--sans);font-size:13px;resize:none;height:68px;line-height:1.5}
+.abtn{background:var(--accent);color:#000;border:none;border-radius:4px;padding:0 20px;height:68px;cursor:pointer;font-family:var(--mono);font-size:12px;font-weight:600;transition:all .15s;min-width:90px}
+.abtn:hover{background:var(--accent2)}
+.abtn:disabled{opacity:.4;cursor:not-allowed}
+.mini-btn{font-size:10px;padding:3px 8px;border:1px solid var(--border);border-radius:3px;background:transparent;color:var(--text2);cursor:pointer}
+.mini-btn:hover{border-color:var(--border2);color:var(--text)}
+.spinner{display:inline-block;width:12px;height:12px;border:2px solid rgba(0,0,0,.2);border-top-color:#000;border-radius:50%;animation:spin .7s linear infinite}
+.spinner-w{border-color:rgba(255,255,255,.2);border-top-color:#fff}
+@keyframes spin{to{transform:rotate(360deg)}}
+.toast{position:fixed;bottom:20px;right:20px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:10px 14px;font-family:var(--mono);font-size:12px;color:var(--text);z-index:1000;transform:translateY(60px);opacity:0;transition:all .3s;pointer-events:none}
+.toast.show{transform:translateY(0);opacity:1}
+.toast.ok{border-color:rgba(0,229,160,.5);color:var(--accent)}
+.toast.err{border-color:rgba(255,92,92,.5);color:var(--red)}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:none;align-items:center;justify-content:center}
+.modal-bg.open{display:flex}
+.modal{background:var(--surface);border:1px solid var(--border2);border-radius:8px;width:460px;max-width:90vw}
+.modal-hdr{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.modal-title{font-family:var(--mono);font-size:13px;font-weight:600}
+.modal-x{background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;line-height:1;padding:2px 6px}
+.modal-x:hover{color:var(--text)}
+.modal-body{padding:20px}
+.modal-foot{padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
+.help{font-size:11px;color:var(--text3);margin-top:4px;line-height:1.4}
+.div{height:1px;background:var(--border);margin:14px 0}
+</style>
+</head>
+<body>
+
+<div class="modal-bg" id="modal">
+  <div class="modal">
+    <div class="modal-hdr">
+      <span class="modal-title">API Configuration</span>
+      <button class="modal-x" id="mClose">x</button>
+    </div>
+    <div class="modal-body">
+      <div class="ig"><label>AIRCALL API ID</label><input type="text" id="cfgId" placeholder="Your Aircall API ID"><div class="help">Aircall Dashboard &rarr; Integrations &rarr; API Keys</div></div>
+      <div class="ig"><label>AIRCALL API TOKEN</label><input type="password" id="cfgToken" placeholder="Your Aircall API Token"></div>
+      <div class="div"></div>
+      <div class="ig"><label>ANTHROPIC API KEY</label><input type="password" id="cfgKey" placeholder="sk-ant-..."><div class="help">console.anthropic.com &rarr; API Keys</div></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" id="mCancel" style="width:auto;padding:6px 16px">Cancel</button>
+      <button class="btn btn-primary" id="mSave" style="width:auto;padding:6px 16px">Save</button>
+    </div>
+  </div>
+</div>
+
+<header>
+  <div class="logo"><div class="dot"></div>TRANSCRIPT ANALYZER</div>
+  <div style="display:flex;gap:8px;align-items:center">
+    <span id="hStatus" style="font-family:var(--mono);font-size:11px;color:var(--text3)">not configured</span>
+    <button class="btn" id="cfgBtn" style="width:auto;padding:5px 12px">Configure</button>
+  </div>
+</header>
+
+<div class="app">
+  <div class="sidebar">
+    <div class="sec">
+      <div class="sec-label">Fetch Calls</div>
+      <div class="ig"><label>DATE RANGE</label>
+        <select id="dateRange">
+          <option value="7">Last 7 days</option>
+          <option value="14">Last 14 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="60">Last 60 days</option>
+          <option value="90">Last 90 days</option>
+        </select>
+      </div>
+      <div class="ig"><label>SHOW</label>
+        <select id="filterType">
+          <option value="all">All calls</option>
+          <option value="transcript">With transcript only</option>
+          <option value="inbound">Inbound only</option>
+          <option value="outbound">Outbound only</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" id="fetchBtn">Fetch Calls</button>
+    </div>
+    <div class="list-hdr">
+      <span class="call-count" id="callCount">No calls loaded</span>
+      <div style="display:flex;gap:4px">
+        <button class="mini-btn" id="selAll">All</button>
+        <button class="mini-btn" id="selNone">None</button>
+      </div>
+    </div>
+    <div class="call-list" id="callList">
+      <div class="empty-st"><div style="font-size:28px;opacity:.2">&#128222;</div><div style="font-size:11px">Configure keys and fetch calls</div></div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="toolbar">
+      <span class="badge" id="selBadge">0 selected</span>
+      <button class="btn" id="viewBtn" style="width:auto;padding:5px 12px">View Transcripts</button>
+      <button class="btn" id="saveBtn" style="width:auto;padding:5px 12px">Save as Files</button>
+      <button class="btn" id="dbgBtn" style="width:auto;padding:5px 12px">Debug API</button>
+      <div style="flex:1"></div>
+      <button class="btn" id="clearBtn" style="width:auto;padding:5px 12px">Clear</button>
+    </div>
+    <div class="tarea" id="tArea">
+      <div class="welcome">
+        <div style="font-family:var(--mono);font-size:48px;font-weight:600;color:var(--border2)">AI</div>
+        <div style="font-family:var(--mono);font-size:13px;color:var(--text2)">SUPPORT CALL ANALYZER</div>
+        <div style="font-size:12px;max-width:380px;line-height:1.6">Configure your API keys, fetch calls from Aircall, select transcripts, and analyze with Claude.</div>
+      </div>
+    </div>
+    <div class="prompt-panel">
+      <div class="plabel">Prompt Claude</div>
+      <div class="presets">
+        <button class="preset" data-p="trends">Find Trends</button>
+        <button class="preset" data-p="issues">Common Issues</button>
+        <button class="preset" data-p="sentiment">Sentiment</button>
+        <button class="preset" data-p="summary">Summarize Each</button>
+        <button class="preset" data-p="escalate">Escalation Risks</button>
+        <button class="preset" data-p="coaching">Coaching</button>
+      </div>
+      <div class="prow">
+        <textarea id="promptInput" placeholder="Ask Claude anything about the selected transcripts..."></textarea>
+        <button class="abtn" id="analyzeBtn">Analyze</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+var calls = [], selected = new Set(), cfg = {}, lastDebug = null;
+var PROXY = "/.netlify/functions/aircall";
+
+var PRESETS = {
+  trends: "Analyze these support call transcripts and identify the top recurring themes and trends. What are customers calling about most often? Group similar issues and rank by frequency.",
+  issues: "Review these transcripts and identify the most common problems customers are experiencing. For each issue describe it clearly and note how many calls it appears in.",
+  sentiment: "Analyze customer sentiment across these support calls. Which calls had frustrated customers? What caused dissatisfaction? Which resolved positively?",
+  summary: "Provide a concise summary of each call: the customer issue, how the agent handled it, and the outcome.",
+  escalate: "Flag any calls representing escalation risks — unresolved issues, angry customers, or likely churn. Explain why each is a concern.",
+  coaching: "Identify coaching opportunities for support agents. Where could agents improve? What best practices are being followed well?"
+};
+
+function esc(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function dur(s) { if(!s) return "0:00"; return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); }
+
+function showToast(msg, type) {
+  var t = document.getElementById("toast");
+  t.textContent = msg;
+  t.className = "toast " + (type==="success"?"ok":"err") + " show";
+  clearTimeout(t._timer);
+  t._timer = setTimeout(function() { t.className = "toast"; }, 3500);
+}
+
+function loadCfg() {
+  try { cfg = JSON.parse(localStorage.getItem("act_cfg")||"{}"); } catch(e) { cfg = {}; }
+  if(cfg.aircallId) document.getElementById("cfgId").value = cfg.aircallId;
+  if(cfg.aircallToken) document.getElementById("cfgToken").value = cfg.aircallToken;
+  if(cfg.anthropicKey) document.getElementById("cfgKey").value = cfg.anthropicKey;
+  updateStatus();
+}
+
+function updateStatus() {
+  var el = document.getElementById("hStatus");
+  if(cfg.aircallId && cfg.aircallToken && cfg.anthropicKey) {
+    el.innerHTML = "<span style='color:var(--accent)'>configured</span>";
+  } else if(cfg.aircallId && cfg.aircallToken) {
+    el.innerHTML = "<span style='color:var(--yellow)'>aircall only</span>";
+  } else {
+    el.textContent = "not configured";
+  }
+}
+
+function openModal() { document.getElementById("modal").classList.add("open"); }
+function closeModal() { document.getElementById("modal").classList.remove("open"); }
+
+function saveCfg() {
+  cfg = {
+    aircallId: document.getElementById("cfgId").value.trim(),
+    aircallToken: document.getElementById("cfgToken").value.trim(),
+    anthropicKey: document.getElementById("cfgKey").value.trim()
+  };
+  try { localStorage.setItem("act_cfg", JSON.stringify(cfg)); } catch(e) {}
+  updateStatus();
+  closeModal();
+  showToast("Configuration saved", "success");
+}
+
+async function aircallFetch(path) {
+  var creds = btoa(cfg.aircallId+":"+cfg.aircallToken);
+  var r = await fetch(PROXY+"?path="+encodeURIComponent(path), {
+    headers: { "x-aircall-auth": creds }
+  });
+  return r;
+}
+
+function extractTranscript(td) {
+  if(!td) return "";
+  if(td.transcription) {
+    var tx = td.transcription;
+    if(tx.sentences && tx.sentences.length) return tx.sentences.map(function(s) { return (s.speaker||s.channel||"Speaker")+": "+(s.text||s.content||""); }).join("\n");
+    if(Array.isArray(tx.content) && tx.content.length) return tx.content.map(function(s) { return (s.channel==="caller"?"Customer":"Agent")+": "+(s.text||s.content||""); }).join("\n");
+    if(tx.text) return tx.text;
+    if(typeof tx==="string" && tx) return tx;
+  }
+  if(td.transcript) return td.transcript;
+  if(Array.isArray(td.sentences) && td.sentences.length) return td.sentences.map(function(s) { return (s.speaker||s.channel||"Speaker")+": "+(s.text||s.content||""); }).join("\n");
+  return "";
+}
+
+async function fetchCalls() {
+  if(!cfg.aircallId || !cfg.aircallToken) { showToast("Configure Aircall credentials first","error"); openModal(); return; }
+  var btn = document.getElementById("fetchBtn");
+  btn.disabled = true;
+  btn.innerHTML = "<span class='spinner'></span> Fetching...";
+  var days = parseInt(document.getElementById("dateRange").value);
+  var from = Math.floor((Date.now()-days*86400000)/1000);
+  var filter = document.getElementById("filterType").value;
+  try {
+    var allCalls = [], page = 1, hasMore = true;
+    while(hasMore && allCalls.length < 200) {
+      var r = await aircallFetch("calls?from="+from+"&per_page=50&page="+page+"&order=DESC");
+      if(!r.ok) { var e = await r.json().catch(function(){return{};}); throw new Error(e.message||"Aircall error "+r.status); }
+      var d = await r.json();
+      var pg = d.calls || [];
+      allCalls = allCalls.concat(pg);
+      if(pg.length < 50) hasMore = false; else page++;
+    }
+    if(filter==="inbound") allCalls = allCalls.filter(function(c){return c.direction==="inbound";});
+    else if(filter==="outbound") allCalls = allCalls.filter(function(c){return c.direction==="outbound";});
+    lastDebug = null;
+    var BATCH = 8;
+    for(var i = 0; i < allCalls.length; i += BATCH) {
+      var pct = Math.round(i/allCalls.length*100);
+      btn.innerHTML = "<span class='spinner'></span> Transcripts "+pct+"%";
+      var batch = allCalls.slice(i, i+BATCH);
+      await Promise.all(batch.map(async function(call) {
+        try {
+          var tr = await aircallFetch("calls/"+call.id+"/transcription");
+          var td = await tr.json();
+          if(!lastDebug) lastDebug = {callId:call.id, status:tr.status, body:td};
+          if(!tr.ok) { call._err = "HTTP "+tr.status+": "+(td.message||td.error||JSON.stringify(td)); return; }
+          var t = extractTranscript(td);
+          if(t) call.transcript = t; else call._raw = JSON.stringify(td);
+        } catch(ex) { call._err = ex.message; }
+      }));
+      if(i+BATCH < allCalls.length) await new Promise(function(r){setTimeout(r,1200);});
+    }
+    if(filter==="transcript") allCalls = allCalls.filter(function(c){return c.transcript;});
+    calls = allCalls; selected.clear(); updateBadge(); renderList();
+    var wt = calls.filter(function(c){return c.transcript;}).length;
+    showToast("Loaded "+calls.length+" calls, "+wt+" with transcripts","success");
+  } catch(ex) { showToast("Error: "+ex.message,"error"); console.error(ex); }
+  finally { btn.disabled = false; btn.innerHTML = "Fetch Calls"; }
+}
+
+function updateBadge() { document.getElementById("selBadge").textContent = selected.size+" selected"; }
+
+function renderList() {
+  var list = document.getElementById("callList");
+  var count = document.getElementById("callCount");
+  if(!calls.length) { count.textContent="No calls found"; list.innerHTML="<div class='empty-st'><div style='font-size:11px'>No calls found. Try a wider date range.</div></div>"; return; }
+  var wt = calls.filter(function(c){return c.transcript;}).length;
+  count.textContent = calls.length+" calls · "+wt+" transcripts";
+  list.innerHTML = calls.map(function(c) {
+    var hasT = c.transcript && c.transcript.length;
+    var d = new Date(c.started_at*1000);
+    var ds = d.toLocaleDateString("en-US",{month:"short",day:"numeric"});
+    var ts = d.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"});
+    var name = (c.contact&&c.contact.name)||c.raw_digits||"Unknown";
+    var sel = selected.has(c.id);
+    return "<div class='call-item"+(sel?" sel":"")+"' data-id='"+c.id+"'><div class='chk'></div><div style='flex:1;min-width:0'><div class='cname'>"+esc(name)+"</div><div class='cmeta'><span class='cdate'>"+ds+" "+ts+"</span><span class='cdur'>"+dur(c.duration)+"</span><span class='tag "+(c.direction==="inbound"?"tag-in":"tag-out")+"'>"+c.direction+"</span>"+(hasT?"<span class='tag tag-yes'>transcript</span>":"<span class='tag tag-no'>no transcript</span>")+"</div></div></div>";
+  }).join("");
+}
+
+function viewSelected() {
+  var sel = calls.filter(function(c){return selected.has(c.id);});
+  if(!sel.length) { showToast("Select at least one call","error"); return; }
+  var area = document.getElementById("tArea");
+  area.innerHTML = sel.map(function(c) {
+    var hasT = c.transcript && c.transcript.length;
+    var d = new Date(c.started_at*1000).toLocaleString();
+    var name = (c.contact&&c.contact.name)||c.raw_digits||"Unknown";
+    var agent = (c.user&&c.user.name)||"Unknown Agent";
+    var body = hasT ? c.transcript.split("\n").map(function(line){
+      var m = line.match(/^([^:]+):\s*(.*)/);
+      return m ? "<span style='color:var(--accent);font-weight:500'>"+esc(m[1])+"</span>: "+esc(m[2])+"\n" : esc(line)+"\n";
+    }).join("") : "<span style='color:var(--text3);font-style:italic'>No transcript available</span>";
+    return "<div class='tcard'><div class='tcard-hdr'><div><div class='tcard-title'>"+esc(name)+" &rarr; "+esc(agent)+"</div><div class='tcard-meta'>"+d+" &middot; "+dur(c.duration)+"</div></div>"+(hasT?"<button class='mini-btn' data-save='"+c.id+"'>Save</button>":"")+"</div><div class='tbody'>"+body+"</div></div>";
+  }).join("");
+}
+
+function dlTranscript(call) {
+  var d = new Date(call.started_at*1000);
+  var ds = d.toISOString().split("T")[0];
+  var name = ((call.contact&&call.contact.name)||call.raw_digits||"unknown").replace(/[^a-z0-9]/gi,"_");
+  var agent = ((call.user&&call.user.name)||"unknown").replace(/[^a-z0-9]/gi,"_");
+  var txt = ["CALL TRANSCRIPT","===============","Date: "+d.toLocaleString(),"Contact: "+((call.contact&&call.contact.name)||call.raw_digits||"Unknown"),"Agent: "+((call.user&&call.user.name)||"Unknown"),"Direction: "+call.direction,"Duration: "+dur(call.duration),"Call ID: "+call.id,"","TRANSCRIPT","----------",call.transcript||"(no transcript)"].join("\n");
+  var blob = new Blob([txt],{type:"text/plain"});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href=url; a.download="transcript_"+ds+"_"+name+"_"+agent+".txt";
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function saveSelected() {
+  var sel = calls.filter(function(c){return selected.has(c.id)&&c.transcript;});
+  if(!sel.length) { showToast("No calls with transcripts selected","error"); return; }
+  sel.forEach(dlTranscript);
+  showToast("Saved "+sel.length+" file"+(sel.length>1?"s":""),"success");
+}
+
+function showDebug() {
+  var area = document.getElementById("tArea");
+  var wt = calls.filter(function(c){return c.transcript;}).length;
+  var errs = calls.filter(function(c){return c._err;}).slice(0,5).map(function(c){return "Call "+c.id+": "+c._err;}).join("\n");
+  var raws = calls.filter(function(c){return c._raw;}).slice(0,2).map(function(c){return "Call "+c.id+": "+c._raw;}).join("\n\n");
+  var dbg = "Calls: "+calls.length+"\nWith transcripts: "+wt+"\nErrors: "+calls.filter(function(c){return c._err;}).length+"\nUnknown shape: "+calls.filter(function(c){return c._raw;}).length+"\n\n";
+  if(lastDebug) dbg += "--- FIRST TRANSCRIPT API RESPONSE ---\nCall ID: "+lastDebug.callId+"\nHTTP Status: "+lastDebug.status+"\nBody:\n"+JSON.stringify(lastDebug.body,null,2);
+  else dbg += "No transcript API response yet. Fetch calls first.";
+  if(errs) dbg += "\n\n--- ERRORS ---\n"+errs;
+  if(raws) dbg += "\n\n--- UNKNOWN SHAPES ---\n"+raws;
+  area.innerHTML = "<div class='dbg'><div class='dbg-hdr'>Debug Info</div><div class='dbg-body'>"+esc(dbg)+"</div></div>";
+}
+
+async function analyze() {
+  if(!cfg.anthropicKey) { showToast("Configure Anthropic API key first","error"); openModal(); return; }
+  var prompt = document.getElementById("promptInput").value.trim();
+  if(!prompt) { showToast("Enter a prompt","error"); return; }
+  var sel = calls.filter(function(c){return selected.has(c.id);});
+  if(!sel.length) { showToast("Select at least one call","error"); return; }
+  var withT = sel.filter(function(c){return c.transcript;});
+  if(!withT.length) { showToast("None of the selected calls have transcripts","error"); return; }
+  var btn = document.getElementById("analyzeBtn");
+  btn.disabled = true; btn.innerHTML = "<span class='spinner spinner-w'></span>";
+  var block = withT.map(function(c,i){
+    var d = new Date(c.started_at*1000).toLocaleString();
+    var name = (c.contact&&c.contact.name)||c.raw_digits||"Unknown";
+    var agent = (c.user&&c.user.name)||"Unknown";
+    return "--- CALL "+(i+1)+" ---\nDate: "+d+"\nContact: "+name+"\nAgent: "+agent+"\nDuration: "+dur(c.duration)+"\n\n"+c.transcript;
+  }).join("\n\n");
+  var full = prompt+"\n\n===== TRANSCRIPTS ("+withT.length+" calls) =====\n\n"+block;
+  var area = document.getElementById("tArea");
+  var loader = document.createElement("div");
+  loader.id = "loader"; loader.className = "result";
+  loader.innerHTML = "<div class='result-hdr'><span class='result-title'>Analyzing "+withT.length+" transcript"+(withT.length>1?"s":"")+"...</span></div>";
+  area.insertBefore(loader,area.firstChild); area.scrollTop = 0;
+  try {
+    var res = await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":cfg.anthropicKey,"anthropic-version":"2023-06-01"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,messages:[{role:"user",content:full}]})});
+    if(!res.ok) { var e = await res.json().catch(function(){return{};}); throw new Error((e.error&&e.error.message)||"API error "+res.status); }
+    var data = await res.json();
+    var result = (data.content&&data.content[0]&&data.content[0].text)||"No response";
+    var l = document.getElementById("loader"); if(l) l.remove();
+    var rd = document.createElement("div"); rd.className = "result";
+    rd.innerHTML = "<div class='result-hdr'><span class='result-title'>Analysis &middot; "+withT.length+" call"+(withT.length>1?"s":"")+" &middot; "+new Date().toLocaleTimeString()+"</span><button class='mini-btn' data-save-analysis>Save</button></div><div class='result-body'>"+esc(result)+"</div>";
+    area.insertBefore(rd,area.firstChild); area.scrollTop = 0;
+    showToast("Analysis complete","success");
+  } catch(ex) { var l = document.getElementById("loader"); if(l) l.remove(); showToast("Error: "+ex.message,"error"); }
+  finally { btn.disabled=false; btn.innerHTML="Analyze"; }
+}
+
+document.getElementById("cfgBtn").addEventListener("click", openModal);
+document.getElementById("mClose").addEventListener("click", closeModal);
+document.getElementById("mCancel").addEventListener("click", closeModal);
+document.getElementById("mSave").addEventListener("click", saveCfg);
+document.getElementById("fetchBtn").addEventListener("click", fetchCalls);
+document.getElementById("selAll").addEventListener("click", function(){calls.forEach(function(c){selected.add(c.id);});updateBadge();renderList();});
+document.getElementById("selNone").addEventListener("click", function(){selected.clear();updateBadge();renderList();});
+document.getElementById("viewBtn").addEventListener("click", viewSelected);
+document.getElementById("saveBtn").addEventListener("click", saveSelected);
+document.getElementById("dbgBtn").addEventListener("click", showDebug);
+document.getElementById("clearBtn").addEventListener("click", function(){document.getElementById("tArea").innerHTML="<div class='welcome'><div style='font-family:var(--mono);font-size:48px;font-weight:600;color:var(--border2)'>AI</div></div>";});
+document.getElementById("analyzeBtn").addEventListener("click", analyze);
+
+document.getElementById("callList").addEventListener("click", function(e){
+  var item = e.target.closest(".call-item");
+  if(item) { var id = parseInt(item.dataset.id); if(selected.has(id)) selected.delete(id); else selected.add(id); updateBadge(); renderList(); }
+});
+
+document.getElementById("tArea").addEventListener("click", function(e){
+  var s = e.target.closest("[data-save]"); if(s) { var id = parseInt(s.dataset.save); var c = calls.find(function(x){return x.id===id;}); if(c) dlTranscript(c); }
+  var sa = e.target.closest("[data-save-analysis]"); if(sa) { var txt = sa.closest(".result").querySelector(".result-body").textContent; var blob = new Blob([txt],{type:"text/plain"}); var url = URL.createObjectURL(blob); var a = document.createElement("a"); a.href=url; a.download="analysis_"+new Date().toISOString().split("T")[0]+".txt"; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); showToast("Saved","success"); }
+});
+
+document.querySelectorAll(".preset").forEach(function(btn){
+  btn.addEventListener("click", function(){ document.getElementById("promptInput").value = PRESETS[btn.dataset.p]; });
+});
+
+document.getElementById("modal").addEventListener("click", function(e){ if(e.target===this) closeModal(); });
+
+loadCfg();
+if(!cfg.aircallId) setTimeout(openModal, 500);
+</script>
+</body>
+</html>
