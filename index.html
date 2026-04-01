@@ -98,7 +98,7 @@ textarea{font-family:var(--sans);font-size:13px;resize:none;height:68px;line-hei
 </style>
 </head>
 <body>
- 
+
 <div class="modal-bg" id="modal">
   <div class="modal">
     <div class="modal-hdr">
@@ -117,7 +117,7 @@ textarea{font-family:var(--sans);font-size:13px;resize:none;height:68px;line-hei
     </div>
   </div>
 </div>
- 
+
 <header>
   <div class="logo"><div class="dot"></div>TRANSCRIPT ANALYZER</div>
   <div style="display:flex;gap:8px;align-items:center">
@@ -125,7 +125,7 @@ textarea{font-family:var(--sans);font-size:13px;resize:none;height:68px;line-hei
     <button class="btn" id="cfgBtn" style="width:auto;padding:5px 12px">Configure</button>
   </div>
 </header>
- 
+
 <div class="app">
   <div class="sidebar">
     <div class="sec">
@@ -160,7 +160,7 @@ textarea{font-family:var(--sans);font-size:13px;resize:none;height:68px;line-hei
       <div class="empty-st"><div style="font-size:28px;opacity:.2">&#128222;</div><div style="font-size:11px">Configure keys and fetch calls</div></div>
     </div>
   </div>
- 
+
   <div class="main">
     <div class="toolbar">
       <span class="badge" id="selBadge">0 selected</span>
@@ -194,13 +194,13 @@ textarea{font-family:var(--sans);font-size:13px;resize:none;height:68px;line-hei
     </div>
   </div>
 </div>
- 
+
 <div class="toast" id="toast"></div>
- 
+
 <script>
 var calls = [], selected = new Set(), cfg = {}, lastDebug = null;
 var PROXY = "https://corsproxy.io/?url=";
- 
+
 var PRESETS = {
   trends: "Analyze these support call transcripts and identify the top recurring themes and trends. What are customers calling about most often? Group similar issues and rank by frequency.",
   issues: "Review these transcripts and identify the most common problems customers are experiencing. For each issue describe it clearly and note how many calls it appears in.",
@@ -209,10 +209,10 @@ var PRESETS = {
   escalate: "Flag any calls representing escalation risks — unresolved issues, angry customers, or likely churn. Explain why each is a concern.",
   coaching: "Identify coaching opportunities for support agents. Where could agents improve? What best practices are being followed well?"
 };
- 
+
 function esc(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function dur(s) { if(!s) return "0:00"; return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); }
- 
+
 function showToast(msg, type) {
   var t = document.getElementById("toast");
   t.textContent = msg;
@@ -220,7 +220,7 @@ function showToast(msg, type) {
   clearTimeout(t._timer);
   t._timer = setTimeout(function() { t.className = "toast"; }, 3500);
 }
- 
+
 function loadCfg() {
   try { cfg = JSON.parse(localStorage.getItem("act_cfg")||"{}"); } catch(e) { cfg = {}; }
   if(cfg.aircallId) document.getElementById("cfgId").value = cfg.aircallId;
@@ -228,7 +228,7 @@ function loadCfg() {
   if(cfg.anthropicKey) document.getElementById("cfgKey").value = cfg.anthropicKey;
   updateStatus();
 }
- 
+
 function updateStatus() {
   var el = document.getElementById("hStatus");
   if(cfg.aircallId && cfg.aircallToken && cfg.anthropicKey) {
@@ -239,10 +239,10 @@ function updateStatus() {
     el.textContent = "not configured";
   }
 }
- 
+
 function openModal() { document.getElementById("modal").classList.add("open"); }
 function closeModal() { document.getElementById("modal").classList.remove("open"); }
- 
+
 function saveCfg() {
   cfg = {
     aircallId: document.getElementById("cfgId").value.trim(),
@@ -254,7 +254,7 @@ function saveCfg() {
   closeModal();
   showToast("Configuration saved", "success");
 }
- 
+
 async function aircallFetch(path) {
   var creds = btoa(cfg.aircallId+":"+cfg.aircallToken);
   var r = await fetch("/api/aircall?path="+encodeURIComponent(path), {
@@ -262,7 +262,7 @@ async function aircallFetch(path) {
   });
   return r;
 }
- 
+
 function extractTranscript(td) {
   if(!td) return "";
   if(td.transcription) {
@@ -276,7 +276,7 @@ function extractTranscript(td) {
   if(Array.isArray(td.sentences) && td.sentences.length) return td.sentences.map(function(s) { return (s.speaker||s.channel||"Speaker")+": "+(s.text||s.content||""); }).join("\n");
   return "";
 }
- 
+
 async function fetchCalls() {
   if(!cfg.aircallId || !cfg.aircallToken) { showToast("Configure Aircall credentials first","error"); openModal(); return; }
   var btn = document.getElementById("fetchBtn");
@@ -298,22 +298,25 @@ async function fetchCalls() {
     if(filter==="inbound") allCalls = allCalls.filter(function(c){return c.direction==="inbound";});
     else if(filter==="outbound") allCalls = allCalls.filter(function(c){return c.direction==="outbound";});
     lastDebug = null;
-    var BATCH = 8;
+    var BATCH = 3;
     for(var i = 0; i < allCalls.length; i += BATCH) {
       var pct = Math.round(i/allCalls.length*100);
       btn.innerHTML = "<span class='spinner'></span> Transcripts "+pct+"%";
       var batch = allCalls.slice(i, i+BATCH);
-      await Promise.all(batch.map(async function(call) {
+      for(var j = 0; j < batch.length; j++) {
+        var call = batch[j];
         try {
           var tr = await aircallFetch("calls/"+call.id+"/transcription");
           var td = await tr.json();
           if(!lastDebug) lastDebug = {callId:call.id, status:tr.status, body:td};
-          if(!tr.ok) { call._err = "HTTP "+tr.status+": "+(td.message||td.error||JSON.stringify(td)); return; }
-          var t = extractTranscript(td);
-          if(t) call.transcript = t; else call._raw = JSON.stringify(td);
+          if(!tr.ok) { call._err = "HTTP "+tr.status+": "+(td.message||td.error||JSON.stringify(td)); }
+          else {
+            var t = extractTranscript(td);
+            if(t) call.transcript = t; else call._raw = JSON.stringify(td);
+          }
         } catch(ex) { call._err = ex.message; }
-      }));
-      if(i+BATCH < allCalls.length) await new Promise(function(r){setTimeout(r,1200);});
+        await new Promise(function(r){setTimeout(r,1100);});
+      }
     }
     if(filter==="transcript") allCalls = allCalls.filter(function(c){return c.transcript;});
     calls = allCalls; selected.clear(); updateBadge(); renderList();
@@ -322,9 +325,9 @@ async function fetchCalls() {
   } catch(ex) { showToast("Error: "+ex.message,"error"); console.error(ex); }
   finally { btn.disabled = false; btn.innerHTML = "Fetch Calls"; }
 }
- 
+
 function updateBadge() { document.getElementById("selBadge").textContent = selected.size+" selected"; }
- 
+
 function renderList() {
   var list = document.getElementById("callList");
   var count = document.getElementById("callCount");
@@ -341,7 +344,7 @@ function renderList() {
     return "<div class='call-item"+(sel?" sel":"")+"' data-id='"+c.id+"'><div class='chk'></div><div style='flex:1;min-width:0'><div class='cname'>"+esc(name)+"</div><div class='cmeta'><span class='cdate'>"+ds+" "+ts+"</span><span class='cdur'>"+dur(c.duration)+"</span><span class='tag "+(c.direction==="inbound"?"tag-in":"tag-out")+"'>"+c.direction+"</span>"+(hasT?"<span class='tag tag-yes'>transcript</span>":"<span class='tag tag-no'>no transcript</span>")+"</div></div></div>";
   }).join("");
 }
- 
+
 function viewSelected() {
   var sel = calls.filter(function(c){return selected.has(c.id);});
   if(!sel.length) { showToast("Select at least one call","error"); return; }
@@ -358,7 +361,7 @@ function viewSelected() {
     return "<div class='tcard'><div class='tcard-hdr'><div><div class='tcard-title'>"+esc(name)+" &rarr; "+esc(agent)+"</div><div class='tcard-meta'>"+d+" &middot; "+dur(c.duration)+"</div></div>"+(hasT?"<button class='mini-btn' data-save='"+c.id+"'>Save</button>":"")+"</div><div class='tbody'>"+body+"</div></div>";
   }).join("");
 }
- 
+
 function dlTranscript(call) {
   var d = new Date(call.started_at*1000);
   var ds = d.toISOString().split("T")[0];
@@ -372,14 +375,14 @@ function dlTranscript(call) {
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
- 
+
 function saveSelected() {
   var sel = calls.filter(function(c){return selected.has(c.id)&&c.transcript;});
   if(!sel.length) { showToast("No calls with transcripts selected","error"); return; }
   sel.forEach(dlTranscript);
   showToast("Saved "+sel.length+" file"+(sel.length>1?"s":""),"success");
 }
- 
+
 function showDebug() {
   var area = document.getElementById("tArea");
   var wt = calls.filter(function(c){return c.transcript;}).length;
@@ -392,7 +395,7 @@ function showDebug() {
   if(raws) dbg += "\n\n--- UNKNOWN SHAPES ---\n"+raws;
   area.innerHTML = "<div class='dbg'><div class='dbg-hdr'>Debug Info</div><div class='dbg-body'>"+esc(dbg)+"</div></div>";
 }
- 
+
 async function analyze() {
   if(!cfg.anthropicKey) { showToast("Configure Anthropic API key first","error"); openModal(); return; }
   var prompt = document.getElementById("promptInput").value.trim();
@@ -428,7 +431,7 @@ async function analyze() {
   } catch(ex) { var l = document.getElementById("loader"); if(l) l.remove(); showToast("Error: "+ex.message,"error"); }
   finally { btn.disabled=false; btn.innerHTML="Analyze"; }
 }
- 
+
 document.getElementById("cfgBtn").addEventListener("click", openModal);
 document.getElementById("mClose").addEventListener("click", closeModal);
 document.getElementById("mCancel").addEventListener("click", closeModal);
@@ -441,23 +444,23 @@ document.getElementById("saveBtn").addEventListener("click", saveSelected);
 document.getElementById("dbgBtn").addEventListener("click", showDebug);
 document.getElementById("clearBtn").addEventListener("click", function(){document.getElementById("tArea").innerHTML="<div class='welcome'><div style='font-family:var(--mono);font-size:48px;font-weight:600;color:var(--border2)'>AI</div></div>";});
 document.getElementById("analyzeBtn").addEventListener("click", analyze);
- 
+
 document.getElementById("callList").addEventListener("click", function(e){
   var item = e.target.closest(".call-item");
   if(item) { var id = parseInt(item.dataset.id); if(selected.has(id)) selected.delete(id); else selected.add(id); updateBadge(); renderList(); }
 });
- 
+
 document.getElementById("tArea").addEventListener("click", function(e){
   var s = e.target.closest("[data-save]"); if(s) { var id = parseInt(s.dataset.save); var c = calls.find(function(x){return x.id===id;}); if(c) dlTranscript(c); }
   var sa = e.target.closest("[data-save-analysis]"); if(sa) { var txt = sa.closest(".result").querySelector(".result-body").textContent; var blob = new Blob([txt],{type:"text/plain"}); var url = URL.createObjectURL(blob); var a = document.createElement("a"); a.href=url; a.download="analysis_"+new Date().toISOString().split("T")[0]+".txt"; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); showToast("Saved","success"); }
 });
- 
+
 document.querySelectorAll(".preset").forEach(function(btn){
   btn.addEventListener("click", function(){ document.getElementById("promptInput").value = PRESETS[btn.dataset.p]; });
 });
- 
+
 document.getElementById("modal").addEventListener("click", function(e){ if(e.target===this) closeModal(); });
- 
+
 loadCfg();
 if(!cfg.aircallId) setTimeout(openModal, 500);
 </script>
