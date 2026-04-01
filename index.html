@@ -257,10 +257,8 @@ function saveCfg() {
  
 async function aircallFetch(path) {
   var creds = btoa(cfg.aircallId+":"+cfg.aircallToken);
-  var url = "https://api.aircall.io/v1/"+path;
-  var proxyUrl = "https://api.allorigins.win/raw?url="+encodeURIComponent(url);
-  var r = await fetch(proxyUrl, {
-    headers: { "Authorization": "Basic "+creds }
+  var r = await fetch("/api/aircall?path="+encodeURIComponent(path), {
+    headers: { "x-aircall-auth": creds }
   });
   return r;
 }
