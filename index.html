@@ -149,6 +149,11 @@ textarea{font-family:var(--sans);font-size:13px;resize:none;height:68px;line-hei
           <option value="outbound">Outbound only</option>
         </select>
       </div>
+      <div class="ig"><label>AGENT</label>
+        <select id="agentFilter">
+          <option value="all">All agents</option>
+        </select>
+      </div>
       <button class="btn btn-primary" id="fetchBtn">Fetch Calls</button>
     </div>
     <div class="sec">
@@ -384,13 +389,36 @@ async function lookupCall() {
  
 function updateBadge() { document.getElementById("selBadge").textContent = selected.size+" selected"; }
  
+function populateAgentFilter() {
+  var select = document.getElementById("agentFilter");
+  var current = select.value;
+  var agents = {};
+  calls.forEach(function(c) {
+    if(c.user && c.user.name) agents[c.user.id] = c.user.name;
+  });
+  var options = '<option value="all">All agents</option>';
+  Object.keys(agents).sort(function(a,b){ return agents[a].localeCompare(agents[b]); }).forEach(function(id) {
+    var sel = current === id ? " selected" : "";
+    options += "<option value='"+id+"'"+sel+">"+esc(agents[id])+"</option>";
+  });
+  select.innerHTML = options;
+}
+ 
+function getFilteredCalls() {
+  var agentId = document.getElementById("agentFilter").value;
+  if(agentId === "all") return calls;
+  return calls.filter(function(c){ return c.user && String(c.user.id) === agentId; });
+}
+ 
 function renderList() {
   var list = document.getElementById("callList");
   var count = document.getElementById("callCount");
   if(!calls.length) { count.textContent="No calls found"; list.innerHTML="<div class='empty-st'><div style='font-size:11px'>No calls found. Try a wider date range.</div></div>"; return; }
-  var wt = calls.filter(function(c){return c.transcript;}).length;
-  count.textContent = calls.length+" calls · "+wt+" transcripts";
-  list.innerHTML = calls.map(function(c) {
+  populateAgentFilter();
+  var filtered = getFilteredCalls();
+  var wt = filtered.filter(function(c){return c.transcript;}).length;
+  count.textContent = filtered.length+" calls · "+wt+" transcripts";
+  list.innerHTML = filtered.map(function(c) {
     var hasT = c.transcript && c.transcript.length;
     var d = new Date(c.started_at*1000);
     var ds = d.toLocaleDateString("en-US",{month:"short",day:"numeric"});
@@ -493,6 +521,7 @@ document.getElementById("mClose").addEventListener("click", closeModal);
 document.getElementById("mCancel").addEventListener("click", closeModal);
 document.getElementById("mSave").addEventListener("click", saveCfg);
 document.getElementById("fetchBtn").addEventListener("click", fetchCalls);
+document.getElementById("agentFilter").addEventListener("change", renderList);
 document.getElementById("lookupBtn").addEventListener("click", lookupCall);
 document.getElementById("selAll").addEventListener("click", function(){calls.forEach(function(c){selected.add(c.id);});updateBadge();renderList();});
 document.getElementById("selNone").addEventListener("click", function(){selected.clear();updateBadge();renderList();});
