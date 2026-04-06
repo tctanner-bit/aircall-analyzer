@@ -277,7 +277,7 @@ async function aircallFetch(path) {
     openModal();
     throw new Error("Missing credentials");
   }
-  var creds = btoa(unescape(encodeURIComponent(cfg.aircallId+":"+cfg.aircallToken)));
+  var creds = btoa(cfg.aircallId+":"+cfg.aircallToken);
   var r = await fetch("/api/aircall?path="+encodeURIComponent(path), {
     headers: { "x-aircall-auth": creds }
   });
