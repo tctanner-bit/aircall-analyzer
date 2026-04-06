@@ -132,9 +132,11 @@ textarea{font-family:var(--sans);font-size:13px;resize:none;height:68px;line-hei
       <div class="sec-label">Fetch Calls</div>
       <div class="ig"><label>DATE RANGE</label>
         <select id="dateRange">
-          <option value="7">Last 7 days</option>
+          <option value="1">Last 24 hours</option>
+          <option value="3">Last 3 days</option>
+          <option value="7" selected>Last 7 days</option>
           <option value="14">Last 14 days</option>
-          <option value="30" selected>Last 30 days</option>
+          <option value="30">Last 30 days</option>
           <option value="60">Last 60 days</option>
           <option value="90">Last 90 days</option>
         </select>
@@ -148,6 +150,14 @@ textarea{font-family:var(--sans);font-size:13px;resize:none;height:68px;line-hei
         </select>
       </div>
       <button class="btn btn-primary" id="fetchBtn">Fetch Calls</button>
+    </div>
+    <div class="sec">
+      <div class="sec-label">Lookup by Call ID</div>
+      <div class="ig">
+        <label>CALL ID</label>
+        <input type="text" id="callIdInput" placeholder="e.g. 5237603">
+      </div>
+      <button class="btn btn-primary" id="lookupBtn">Lookup Call</button>
     </div>
     <div class="list-hdr">
       <span class="call-count" id="callCount">No calls loaded</span>
@@ -332,6 +342,46 @@ async function fetchCalls() {
   finally { btn.disabled = false; btn.innerHTML = "Fetch Calls"; }
 }
  
+async function lookupCall() {
+  var callId = document.getElementById("callIdInput").value.trim();
+  if(!callId) { showToast("Enter a call ID","error"); return; }
+  if(!cfg.aircallId || !cfg.aircallToken) { showToast("Configure Aircall credentials first","error"); openModal(); return; }
+  var btn = document.getElementById("lookupBtn");
+  btn.disabled = true;
+  btn.innerHTML = "<span class='spinner'></span> Looking up...";
+  try {
+    // Fetch call details
+    var r = await aircallFetch("calls/"+callId);
+    if(!r.ok) { var e = await r.json().catch(function(){return{};}); throw new Error(e.message||"Call not found: "+r.status); }
+    var d = await r.json();
+    var call = d.call;
+    if(!call) throw new Error("Call not found");
+    // Fetch transcript
+    var tr = await aircallFetch("calls/"+callId+"/transcription");
+    var td = await tr.json();
+    if(!lastDebug) lastDebug = {callId:callId, status:tr.status, body:td};
+    if(tr.ok) {
+      var t = extractTranscript(td);
+      if(t) call.transcript = t; else call._raw = JSON.stringify(td);
+    } else {
+      call._err = "HTTP "+tr.status+": "+(td.message||td.error||JSON.stringify(td));
+    }
+    // Add to calls list if not already there
+    var exists = calls.find(function(c){return c.id===call.id;});
+    if(!exists) {
+      calls.unshift(call);
+    } else {
+      calls[calls.indexOf(exists)] = call;
+    }
+    selected.clear();
+    selected.add(call.id);
+    updateBadge();
+    renderList();
+    showToast("Call "+callId+" loaded"+(call.transcript?" with transcript":"" ),"success");
+  } catch(ex) { showToast("Error: "+ex.message,"error"); console.error(ex); }
+  finally { btn.disabled=false; btn.innerHTML="Lookup Call"; }
+}
+ 
 function updateBadge() { document.getElementById("selBadge").textContent = selected.size+" selected"; }
  
 function renderList() {
@@ -443,6 +493,7 @@ document.getElementById("mClose").addEventListener("click", closeModal);
 document.getElementById("mCancel").addEventListener("click", closeModal);
 document.getElementById("mSave").addEventListener("click", saveCfg);
 document.getElementById("fetchBtn").addEventListener("click", fetchCalls);
+document.getElementById("lookupBtn").addEventListener("click", lookupCall);
 document.getElementById("selAll").addEventListener("click", function(){calls.forEach(function(c){selected.add(c.id);});updateBadge();renderList();});
 document.getElementById("selNone").addEventListener("click", function(){selected.clear();updateBadge();renderList();});
 document.getElementById("viewBtn").addEventListener("click", viewSelected);
