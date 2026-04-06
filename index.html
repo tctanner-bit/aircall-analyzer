@@ -242,6 +242,7 @@ function loadCfg() {
   if(cfg.aircallToken) document.getElementById("cfgToken").value = cfg.aircallToken;
   if(cfg.anthropicKey) document.getElementById("cfgKey").value = cfg.anthropicKey;
   updateStatus();
+  console.log("Loaded cfg - aircallId present:", !!cfg.aircallId, "token present:", !!cfg.aircallToken);
 }
  
 function updateStatus() {
@@ -271,7 +272,12 @@ function saveCfg() {
 }
  
 async function aircallFetch(path) {
-  var creds = btoa(cfg.aircallId+":"+cfg.aircallToken);
+  if(!cfg.aircallId || !cfg.aircallToken) {
+    showToast("API credentials missing - please Configure","error");
+    openModal();
+    throw new Error("Missing credentials");
+  }
+  var creds = btoa(unescape(encodeURIComponent(cfg.aircallId+":"+cfg.aircallToken)));
   var r = await fetch("/api/aircall?path="+encodeURIComponent(path), {
     headers: { "x-aircall-auth": creds }
   });
