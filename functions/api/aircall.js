@@ -1,23 +1,30 @@
 export async function onRequest(context) {
-  const url = new URL(context.request.url);
-  const path = url.searchParams.get("path") || "";
-  const auth = context.request.headers.get("x-aircall-auth") || "";
-
   const cors = {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type, x-aircall-auth",
-    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, x-api-key, anthropic-version",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Content-Type": "application/json"
   };
-
+ 
   if (context.request.method === "OPTIONS") {
     return new Response("", { status: 200, headers: cors });
   }
-
-  const response = await fetch("https://api.aircall.io/v1/" + path, {
-    headers: { "Authorization": "Basic " + auth }
-  });
-
-  const data = await response.text();
-  return new Response(data, { status: response.status, headers: cors });
+ 
+  try {
+    const body = await context.request.text();
+    const apiKey = context.request.headers.get("x-api-key") || "";
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01"
+      },
+      body: body
+    });
+    const data = await response.text();
+    return new Response(data, { status: response.status, headers: cors });
+  } catch(err) {
+    return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: cors });
+  }
 }
