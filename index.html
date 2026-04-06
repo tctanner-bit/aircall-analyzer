@@ -475,7 +475,7 @@ async function analyze() {
   loader.innerHTML = "<div class='result-hdr'><span class='result-title'>Analyzing "+withT.length+" transcript"+(withT.length>1?"s":"")+"...</span></div>";
   area.insertBefore(loader,area.firstChild); area.scrollTop = 0;
   try {
-    var res = await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":cfg.anthropicKey,"anthropic-version":"2023-06-01"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,messages:[{role:"user",content:full}]})});
+    var res = await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":cfg.anthropicKey,"anthropic-version":"2023-06-01"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,messages:[{role:"user",content:full}]})});
     if(!res.ok) { var e = await res.json().catch(function(){return{};}); throw new Error((e.error&&e.error.message)||"API error "+res.status); }
     var data = await res.json();
     var result = (data.content&&data.content[0]&&data.content[0].text)||"No response";
