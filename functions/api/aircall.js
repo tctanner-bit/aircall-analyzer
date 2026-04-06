@@ -1,8 +1,12 @@
 export async function onRequest(context) {
+  const url = new URL(context.request.url);
+  const path = decodeURIComponent(url.searchParams.get("path") || "");
+  const auth = context.request.headers.get("x-aircall-auth") || "";
+ 
   const cors = {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type, x-api-key, anthropic-version",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, x-aircall-auth",
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
     "Content-Type": "application/json"
   };
  
@@ -10,17 +14,17 @@ export async function onRequest(context) {
     return new Response("", { status: 200, headers: cors });
   }
  
+  if (!auth) {
+    return new Response(JSON.stringify({ error: "Missing auth header" }), { status: 400, headers: cors });
+  }
+ 
   try {
-    const body = await context.request.text();
-    const apiKey = context.request.headers.get("x-api-key") || "";
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
+    const aircallUrl = "https://api.aircall.io/v1/" + path;
+    const response = await fetch(aircallUrl, {
       headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01"
-      },
-      body: body
+        "Authorization": "Basic " + auth,
+        "Content-Type": "application/json"
+      }
     });
     const data = await response.text();
     return new Response(data, { status: response.status, headers: cors });
