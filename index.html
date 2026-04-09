@@ -77,6 +77,9 @@ textarea{font-family:var(--sans);font-size:13px;resize:none;height:68px;line-hei
 .abtn:disabled{opacity:.4;cursor:not-allowed}
 .mini-btn{font-size:10px;padding:3px 8px;border:1px solid var(--border);border-radius:3px;background:transparent;color:var(--text2);cursor:pointer}
 .mini-btn:hover{border-color:var(--border2);color:var(--text)}
+.tab-btn{flex:1;padding:10px 8px;background:transparent;border:none;border-bottom:2px solid transparent;color:var(--text3);font-family:var(--mono);font-size:11px;cursor:pointer;transition:all .15s;font-weight:500}
+.tab-btn:hover{color:var(--text2)}
+.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
 .spinner{display:inline-block;width:12px;height:12px;border:2px solid rgba(0,0,0,.2);border-top-color:#000;border-radius:50%;animation:spin .7s linear infinite}
 .spinner-w{border-color:rgba(255,255,255,.2);border-top-color:#fff}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -128,6 +131,12 @@ textarea{font-family:var(--sans);font-size:13px;resize:none;height:68px;line-hei
  
 <div class="app">
   <div class="sidebar">
+    <div style="display:flex;border-bottom:1px solid var(--border)">
+      <button class="tab-btn active" id="tabAircall" onclick="switchTab('aircall')">Aircall</button>
+      <button class="tab-btn" id="tabHubspot" onclick="switchTab('hubspot')">HubSpot</button>
+    </div>
+ 
+    <div id="aircallPanel">
     <div class="sec">
       <div class="sec-label">Fetch Calls</div>
       <div class="ig"><label>DATE RANGE</label>
@@ -164,6 +173,42 @@ textarea{font-family:var(--sans);font-size:13px;resize:none;height:68px;line-hei
       </div>
       <button class="btn btn-primary" id="lookupBtn">Lookup Call</button>
     </div>
+    </div><!-- end aircallPanel -->
+ 
+    <div id="hubspotPanel" style="display:none">
+    <div class="sec">
+      <div class="sec-label">HubSpot Calls</div>
+      <div class="ig"><label>DATE RANGE</label>
+        <select id="hsDays">
+          <option value="1">Last 24 hours</option>
+          <option value="3">Last 3 days</option>
+          <option value="7" selected>Last 7 days</option>
+          <option value="14">Last 14 days</option>
+          <option value="30">Last 30 days</option>
+        </select>
+      </div>
+      <div class="ig"><label>TYPE</label>
+        <select id="hsFilter">
+          <option value="all">All calls</option>
+          <option value="inbound">Inbound</option>
+          <option value="outbound">Outbound</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" id="hsFetchBtn">Fetch HubSpot Calls</button>
+    </div>
+    <div class="list-hdr">
+      <span class="call-count" id="hsCallCount">No calls loaded</span>
+      <div style="display:flex;gap:4px">
+        <button class="mini-btn" id="hsSelAll">All</button>
+        <button class="mini-btn" id="hsSelNone">None</button>
+      </div>
+    </div>
+    <div class="call-list" id="hsCallList">
+      <div class="empty-st"><div style="font-size:11px">Fetch HubSpot calls to begin</div></div>
+    </div>
+    </div><!-- end hubspotPanel -->
+ 
+    <div id="aircallListPanel">
     <div class="list-hdr">
       <span class="call-count" id="callCount">No calls loaded</span>
       <div style="display:flex;gap:4px">
@@ -174,6 +219,8 @@ textarea{font-family:var(--sans);font-size:13px;resize:none;height:68px;line-hei
     <div class="call-list" id="callList">
       <div class="empty-st"><div style="font-size:28px;opacity:.2">&#128222;</div><div style="font-size:11px">Configure keys and fetch calls</div></div>
     </div>
+      </div><!-- end aircallListPanel -->
+ 
   </div>
  
   <div class="main">
@@ -181,6 +228,7 @@ textarea{font-family:var(--sans);font-size:13px;resize:none;height:68px;line-hei
       <span class="badge" id="selBadge">0 selected</span>
       <button class="btn" id="viewBtn" style="width:auto;padding:5px 12px">View Transcripts</button>
       <button class="btn" id="saveBtn" style="width:auto;padding:5px 12px">Save as Files</button>
+      <button class="btn" id="saveAllBtn" style="width:auto;padding:5px 12px">Save All as One</button>
       <button class="btn" id="dbgBtn" style="width:auto;padding:5px 12px">Debug API</button>
       <div style="flex:1"></div>
       <button class="btn" id="clearBtn" style="width:auto;padding:5px 12px">Clear</button>
@@ -527,6 +575,10 @@ document.getElementById("mClose").addEventListener("click", closeModal);
 document.getElementById("mCancel").addEventListener("click", closeModal);
 document.getElementById("mSave").addEventListener("click", saveCfg);
 document.getElementById("fetchBtn").addEventListener("click", fetchCalls);
+document.getElementById("saveAllBtn").addEventListener("click", saveAllAsOne);
+document.getElementById("hsFetchBtn").addEventListener("click", fetchHubSpotCalls);
+document.getElementById("hsSelAll").addEventListener("click", function(){ hsCalls.forEach(function(c){hsSelected.add(c.id);}); renderHsCallList(); });
+document.getElementById("hsSelNone").addEventListener("click", function(){ hsSelected.clear(); renderHsCallList(); });
 document.getElementById("agentFilter").addEventListener("change", renderList);
 document.getElementById("lookupBtn").addEventListener("click", lookupCall);
 document.getElementById("selAll").addEventListener("click", function(){calls.forEach(function(c){selected.add(c.id);});updateBadge();renderList();});
@@ -536,6 +588,17 @@ document.getElementById("saveBtn").addEventListener("click", saveSelected);
 document.getElementById("dbgBtn").addEventListener("click", showDebug);
 document.getElementById("clearBtn").addEventListener("click", function(){document.getElementById("tArea").innerHTML="<div class='welcome'><div style='font-family:var(--mono);font-size:48px;font-weight:600;color:var(--border2)'>AI</div></div>";});
 document.getElementById("analyzeBtn").addEventListener("click", analyze);
+ 
+document.getElementById("hsCallList").addEventListener("click", function(e){
+  var item = e.target.closest(".call-item");
+  if(item && item.dataset.hsid) {
+    var id = item.dataset.hsid;
+    if(hsSelected.has(id)) hsSelected.delete(id); else hsSelected.add(id);
+    renderHsCallList();
+    // Update badge to show combined count
+    document.getElementById("selBadge").textContent = (selected.size + hsSelected.size) + " selected";
+  }
+});
  
 document.getElementById("callList").addEventListener("click", function(e){
   var item = e.target.closest(".call-item");
@@ -552,6 +615,177 @@ document.querySelectorAll(".preset").forEach(function(btn){
 });
  
 document.getElementById("modal").addEventListener("click", function(e){ if(e.target===this) closeModal(); });
+ 
+// ─── TAB SWITCHING ────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  var isAircall = tab === "aircall";
+  document.getElementById("aircallPanel").style.display = isAircall ? "" : "none";
+  document.getElementById("aircallListPanel").style.display = isAircall ? "" : "none";
+  document.getElementById("hubspotPanel").style.display = isAircall ? "none" : "";
+  document.getElementById("tabAircall").className = "tab-btn" + (isAircall ? " active" : "");
+  document.getElementById("tabHubspot").className = "tab-btn" + (!isAircall ? " active" : "");
+}
+ 
+// ─── SAVE ALL AS ONE FILE ─────────────────────────────────────────────────────
+function saveAllAsOne() {
+  var sel = calls.filter(function(c){ return selected.has(c.id) && c.transcript; });
+  if(!sel.length) { showToast("No calls with transcripts selected","error"); return; }
+  var lines = ["COMBINED CALL TRANSCRIPTS","========================","Generated: "+new Date().toLocaleString(),"Total calls: "+sel.length,"",""];
+  sel.forEach(function(c, i) {
+    var d = new Date(c.started_at*1000).toLocaleString();
+    var name = (c.contact&&c.contact.name)||c.raw_digits||"Unknown";
+    var agent = (c.user&&c.user.name)||"Unknown";
+    lines.push("═══════════════════════════════════════");
+    lines.push("CALL "+(i+1)+" OF "+sel.length);
+    lines.push("Date: "+d);
+    lines.push("Contact: "+name);
+    lines.push("Agent: "+agent);
+    lines.push("Direction: "+c.direction);
+    lines.push("Duration: "+dur(c.duration));
+    lines.push("Call ID: "+c.id);
+    lines.push("───────────────────────────────────────");
+    lines.push(c.transcript);
+    lines.push("");
+  });
+  var txt = lines.join("\n");
+  var blob = new Blob([txt],{type:"text/plain"});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href=url; a.download="combined_transcripts_"+new Date().toISOString().split("T")[0]+".txt";
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast("Saved "+sel.length+" transcripts as one file","success");
+}
+ 
+// ─── HUBSPOT ──────────────────────────────────────────────────────────────────
+var hsCalls = [], hsSelected = new Set();
+ 
+async function fetchHubSpotCalls() {
+  var btn = document.getElementById("hsFetchBtn");
+  btn.disabled = true;
+  btn.innerHTML = "<span class='spinner'></span> Fetching...";
+  var days = parseInt(document.getElementById("hsDays").value);
+  var filter = document.getElementById("hsFilter").value;
+  var after = Date.now() - days * 86400000;
+ 
+  try {
+    var res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": cfg.anthropicKey,
+        "anthropic-version": "2023-06-01"
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 4000,
+        tools: [{
+          type: "mcp",
+          server_label: "hubspot",
+          server_url: "https://mcp.hubspot.com/anthropic",
+          allowed_tools: ["search_crm_objects","get_crm_objects"]
+        }],
+        messages: [{
+          role: "user",
+          content: "Search HubSpot for call engagements from the last "+days+" days. For each call return: id, hs_call_title, hs_call_direction, hs_call_duration, hs_call_summary, hs_call_body, hs_timestamp, hs_call_status, associations with contacts. Return as many as possible up to 50. Respond ONLY with a JSON array of call objects, no other text."
+        }]
+      })
+    });
+ 
+    var data = await res.json();
+    var text = (data.content||[]).filter(function(b){return b.type==="text";}).map(function(b){return b.text;}).join("");
+ 
+    // Try to parse JSON from response
+    var parsed = [];
+    try {
+      var jsonMatch = text.match(/\[[\s\S]*\]/);
+      if(jsonMatch) parsed = JSON.parse(jsonMatch[0]);
+    } catch(e) {
+      // If parsing fails, show raw response for debugging
+      console.log("HubSpot response:", text);
+      showToast("Could not parse HubSpot response - check console","error");
+      btn.disabled=false; btn.innerHTML="Fetch HubSpot Calls";
+      return;
+    }
+ 
+    // Normalize to our call format
+    hsCalls = parsed.map(function(c) {
+      var summary = c.hs_call_summary || c.hs_call_body || c.properties && (c.properties.hs_call_summary || c.properties.hs_call_body) || "";
+      var direction = c.hs_call_direction || (c.properties && c.properties.hs_call_direction) || "unknown";
+      var ts = c.hs_timestamp || (c.properties && c.properties.hs_timestamp) || Date.now();
+      var title = c.hs_call_title || (c.properties && c.properties.hs_call_title) || "HubSpot Call";
+      var dur_ms = parseInt(c.hs_call_duration || (c.properties && c.properties.hs_call_duration) || 0);
+ 
+      if(filter !== "all" && direction.toLowerCase().indexOf(filter) === -1) return null;
+ 
+      return {
+        id: "hs_"+(c.id||Math.random()),
+        started_at: Math.floor(new Date(ts).getTime()/1000),
+        duration: Math.floor(dur_ms/1000),
+        direction: direction.toLowerCase().indexOf("inbound") > -1 ? "inbound" : "outbound",
+        contact: { name: title },
+        user: { name: "HubSpot" },
+        transcript: summary,
+        _source: "hubspot"
+      };
+    }).filter(Boolean);
+ 
+    hsSelected.clear();
+    renderHsCallList();
+    showToast("Loaded "+hsCalls.length+" HubSpot calls","success");
+ 
+  } catch(ex) {
+    showToast("Error: "+ex.message,"error");
+    console.error(ex);
+  } finally {
+    btn.disabled=false; btn.innerHTML="Fetch HubSpot Calls";
+  }
+}
+ 
+function renderHsCallList() {
+  var list = document.getElementById("hsCallList");
+  var count = document.getElementById("hsCallCount");
+  if(!hsCalls.length) {
+    count.textContent = "No calls found";
+    list.innerHTML = "<div class='empty-st'><div style='font-size:11px'>No HubSpot calls found</div></div>";
+    return;
+  }
+  var withNotes = hsCalls.filter(function(c){return c.transcript;}).length;
+  count.textContent = hsCalls.length+" calls · "+withNotes+" with notes";
+  list.innerHTML = hsCalls.map(function(c) {
+    var d = new Date(c.started_at*1000);
+    var ds = d.toLocaleDateString("en-US",{month:"short",day:"numeric"});
+    var ts = d.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"});
+    var sel = hsSelected.has(c.id);
+    var hasT = c.transcript && c.transcript.length;
+    return "<div class='call-item"+(sel?" sel":"")+"' data-hsid='"+c.id+"'>" +
+      "<div class='chk'></div>" +
+      "<div style='flex:1;min-width:0'>" +
+        "<div class='cname'>"+esc(c.contact.name||"Unknown")+"</div>" +
+        "<div class='cmeta'><span class='cdate'>"+ds+" "+ts+"</span><span class='cdur'>"+dur(c.duration)+"</span>" +
+          "<span class='tag "+(c.direction==="inbound"?"tag-in":"tag-out")+"'>"+c.direction+"</span>" +
+          "<span class='tag' style='background:rgba(100,120,255,.1);color:#8899ff'>hubspot</span>" +
+          (hasT?"<span class='tag tag-yes'>notes</span>":"<span class='tag tag-no'>no notes</span>") +
+        "</div>" +
+      "</div></div>";
+  }).join("");
+}
+ 
+// Wire analyze to also work with HubSpot selected calls
+var _origAnalyze = analyze;
+async function analyze() {
+  // Check if we have HS calls selected — merge them with aircall selected for analysis
+  var hsWithNotes = hsCalls.filter(function(c){ return hsSelected.has(c.id) && c.transcript; });
+  if(hsWithNotes.length > 0) {
+    // Add HS calls temporarily to the calls array for analysis
+    var origCalls = calls.slice();
+    hsWithNotes.forEach(function(c){ if(!calls.find(function(x){return x.id===c.id;})) calls.push(c); selected.add(c.id); });
+    await _origAnalyze();
+    calls = origCalls;
+  } else {
+    await _origAnalyze();
+  }
+}
  
 loadCfg();
 if(!cfg.aircallId) setTimeout(openModal, 500);
