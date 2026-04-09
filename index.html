@@ -148,6 +148,7 @@ textarea{font-family:var(--sans);font-size:13px;resize:none;height:68px;line-hei
           <option value="30">Last 30 days</option>
           <option value="60">Last 60 days</option>
           <option value="90">Last 90 days</option>
+          <option value="180">Last 6 months</option>
         </select>
       </div>
       <div class="ig"><label>SHOW</label>
@@ -362,17 +363,22 @@ async function fetchCalls() {
   var filter = document.getElementById("filterType").value;
   try {
     var allCalls = [], page = 1, hasMore = true;
-    while(hasMore && allCalls.length < 200) {
+    while(hasMore && allCalls.length < 2000) {
+      btn.innerHTML = "<span class='spinner'></span> Fetching calls... "+allCalls.length;
       var r = await aircallFetch("calls?from="+from+"&per_page=50&page="+page+"&order=DESC");
       if(!r.ok) { var e = await r.json().catch(function(){return{};}); throw new Error(e.message||"Aircall error "+r.status); }
       var d = await r.json();
       var pg = d.calls || [];
       allCalls = allCalls.concat(pg);
       if(pg.length < 50) hasMore = false; else page++;
+      // Respect rate limit - pause between pages
+      if(hasMore) await new Promise(function(r){setTimeout(r,200);});
     }
     if(filter==="inbound") allCalls = allCalls.filter(function(c){return c.direction==="inbound";});
     else if(filter==="outbound") allCalls = allCalls.filter(function(c){return c.direction==="outbound";});
     lastDebug = null;
+    // Show call count before transcript fetching begins
+    document.getElementById("callCount").textContent = allCalls.length+" calls loaded · fetching transcripts...";
     var BATCH = 3;
     for(var i = 0; i < allCalls.length; i += BATCH) {
       var pct = Math.round(i/allCalls.length*100);
