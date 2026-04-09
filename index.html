@@ -8,115 +8,156 @@
 <style>
 :root{--bg:#0e0f11;--surface:#16181c;--surface2:#1e2128;--border:#2a2d35;--border2:#363a45;--accent:#00e5a0;--accent2:#00b87a;--adim:rgba(0,229,160,0.08);--text:#e8eaf0;--text2:#9098a8;--text3:#5a6070;--red:#ff5c5c;--yellow:#ffc043;--mono:"IBM Plex Mono",monospace;--sans:"IBM Plex Sans",sans-serif}
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;min-height:100vh;display:flex;flex-direction:column}
-header{border-bottom:1px solid var(--border);padding:0 32px;height:56px;display:flex;align-items:center;justify-content:space-between;background:var(--surface);position:sticky;top:0;z-index:100}
-.logo{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:13px;font-weight:600;letter-spacing:.05em}
-.dot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent);animation:pulse 2s infinite}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+header{border-bottom:1px solid var(--border);padding:0 20px;height:50px;display:flex;align-items:center;justify-content:space-between;background:var(--surface);flex-shrink:0}
+.logo{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.05em}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--accent);animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-.app{display:grid;grid-template-columns:300px 1fr;flex:1;min-height:calc(100vh - 56px)}
-.sidebar{border-right:1px solid var(--border);display:flex;flex-direction:column;background:var(--surface)}
-.sec{padding:20px;border-bottom:1px solid var(--border)}
-.sec-label{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.12em;color:var(--text3);text-transform:uppercase;margin-bottom:12px}
-.ig{margin-bottom:10px}
-.ig label{display:block;font-size:11px;color:var(--text2);margin-bottom:4px;font-family:var(--mono)}
-input,select,textarea{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px 10px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;transition:border-color .15s}
+.app{display:grid;grid-template-columns:280px 1fr;flex:1;overflow:hidden}
+ 
+/* ── SIDEBAR ── */
+.sidebar{border-right:1px solid var(--border);display:flex;flex-direction:column;background:var(--surface);overflow:hidden}
+.tab-row{display:flex;border-bottom:1px solid var(--border);flex-shrink:0}
+.tab-btn{flex:1;padding:9px 6px;background:transparent;border:none;border-bottom:2px solid transparent;color:var(--text3);font-family:var(--mono);font-size:11px;cursor:pointer;transition:all .15s;font-weight:500}
+.tab-btn:hover{color:var(--text2)}
+.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+.sec{padding:14px;border-bottom:1px solid var(--border);flex-shrink:0}
+.sec-label{font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:.12em;color:var(--text3);text-transform:uppercase;margin-bottom:10px}
+.ig{margin-bottom:8px}
+.ig label{display:block;font-size:10px;color:var(--text2);margin-bottom:3px;font-family:var(--mono)}
+input,select,textarea{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:6px 8px;color:var(--text);font-family:var(--mono);font-size:11px;outline:none;transition:border-color .15s}
 input:focus,select:focus,textarea:focus{border-color:var(--accent)}
 select option{background:var(--surface2)}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 14px;border-radius:4px;border:1px solid var(--border);cursor:pointer;font-family:var(--mono);font-size:12px;font-weight:500;background:transparent;color:var(--text2);transition:all .15s;width:100%}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:7px 12px;border-radius:4px;border:1px solid var(--border);cursor:pointer;font-family:var(--mono);font-size:11px;font-weight:500;background:transparent;color:var(--text2);transition:all .15s;width:100%}
 .btn:hover{border-color:var(--border2);color:var(--text)}
 .btn-primary{background:var(--accent);color:#000;border-color:var(--accent)}
 .btn-primary:hover{background:var(--accent2);border-color:var(--accent2)}
 .btn-primary:disabled{opacity:.4;cursor:not-allowed}
-.list-hdr{padding:12px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}
-.call-count{font-family:var(--mono);font-size:11px;color:var(--text3)}
-.call-list{flex:1;overflow-y:auto}
-.call-list::-webkit-scrollbar{width:4px}
+.list-hdr{padding:8px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);flex-shrink:0}
+.call-count{font-family:var(--mono);font-size:10px;color:var(--text3)}
+.call-list{flex:1;overflow-y:auto;min-height:0}
+.call-list::-webkit-scrollbar{width:3px}
 .call-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
-.call-item{padding:10px 20px;cursor:pointer;border-left:3px solid transparent;display:flex;align-items:flex-start;gap:10px;transition:background .1s}
+.call-item{padding:8px 14px;cursor:pointer;border-left:2px solid transparent;display:flex;align-items:flex-start;gap:8px;transition:background .1s}
 .call-item:hover{background:var(--surface2)}
 .call-item.sel{border-left-color:var(--accent);background:var(--adim)}
-.chk{width:14px;height:14px;border:1px solid var(--border2);border-radius:3px;flex-shrink:0;margin-top:2px;transition:all .1s}
+.chk{width:13px;height:13px;border:1px solid var(--border2);border-radius:3px;flex-shrink:0;margin-top:2px;transition:all .1s}
 .call-item.sel .chk{background:var(--accent);border-color:var(--accent)}
-.cname{font-size:12px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px}
-.cmeta{display:flex;gap:6px;flex-wrap:wrap}
-.cdate,.cdur{font-family:var(--mono);font-size:10px;color:var(--text3)}
-.tag{font-family:var(--mono);font-size:9px;padding:1px 5px;border-radius:2px;text-transform:uppercase}
+.cname{font-size:11px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px}
+.cmeta{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
+.cdate,.cdur{font-family:var(--mono);font-size:9px;color:var(--text3)}
+.tag{font-family:var(--mono);font-size:8px;padding:1px 4px;border-radius:2px;text-transform:uppercase}
 .tag-in{background:rgba(0,229,160,.1);color:var(--accent)}
 .tag-out{background:rgba(100,120,255,.1);color:#8899ff}
 .tag-no{background:rgba(255,92,92,.1);color:var(--red)}
 .tag-yes{background:rgba(0,229,160,.15);color:var(--accent)}
-.empty-st{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 20px;text-align:center;color:var(--text3);gap:8px}
+.empty-st{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px 14px;text-align:center;color:var(--text3);gap:6px;font-size:11px}
+ 
+/* ── MAIN ── */
 .main{display:flex;flex-direction:column;overflow:hidden}
-.toolbar{padding:14px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;background:var(--surface);flex-wrap:wrap}
-.badge{font-family:var(--mono);font-size:11px;padding:4px 10px;background:var(--adim);color:var(--accent);border-radius:3px;border:1px solid rgba(0,229,160,.2)}
-.tarea{overflow-y:auto;flex:1;padding:24px}
-.tarea::-webkit-scrollbar{width:4px}
-.tarea::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
-.welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:300px;gap:12px;color:var(--text3);text-align:center}
-.tcard{background:var(--surface);border:1px solid var(--border);border-radius:6px;margin-bottom:12px;overflow:hidden}
-.tcard-hdr{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--surface2)}
-.tcard-title{font-size:12px;font-weight:500}
-.tcard-meta{font-family:var(--mono);font-size:10px;color:var(--text3)}
-.tbody{padding:16px;font-size:11px;line-height:1.7;color:var(--text2);white-space:pre-wrap;font-family:var(--mono);max-height:250px;overflow-y:auto}
-.result{background:var(--surface);border:1px solid rgba(0,229,160,.25);border-radius:6px;margin-bottom:12px;overflow:hidden}
+ 
+/* ── SELECTION BAR ── */
+.sel-bar{padding:8px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;background:var(--surface);flex-shrink:0;flex-wrap:wrap}
+.badge{font-family:var(--mono);font-size:11px;padding:3px 8px;background:var(--adim);color:var(--accent);border-radius:3px;border:1px solid rgba(0,229,160,.2)}
+.sel-btn{font-size:10px;padding:4px 10px;border:1px solid var(--border);border-radius:3px;background:transparent;color:var(--text2);cursor:pointer;font-family:var(--mono);transition:all .1s}
+.sel-btn:hover{border-color:var(--border2);color:var(--text)}
+ 
+/* ── ANALYSIS AREA (main focus) ── */
+.analysis-area{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:16px;min-height:0}
+.analysis-area::-webkit-scrollbar{width:4px}
+.analysis-area::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+ 
+.welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:10px;color:var(--text3);text-align:center}
+.welcome-title{font-family:var(--mono);font-size:14px;color:var(--text2);letter-spacing:.05em}
+.welcome-sub{font-size:12px;max-width:400px;line-height:1.6}
+ 
+.result{background:var(--surface);border:1px solid rgba(0,229,160,.2);border-radius:8px;overflow:hidden}
 .result-hdr{padding:12px 16px;border-bottom:1px solid var(--border);background:var(--adim);display:flex;align-items:center;gap:8px}
 .result-title{font-family:var(--mono);font-size:11px;font-weight:600;color:var(--accent);flex:1;text-transform:uppercase;letter-spacing:.05em}
-.result-body{padding:16px;font-size:13px;line-height:1.75;color:var(--text);white-space:pre-wrap}
-.dbg{background:var(--surface);border:1px solid rgba(255,192,67,.4);border-radius:6px;margin-bottom:12px}
-.dbg-hdr{padding:12px 16px;background:rgba(255,192,67,.08);border-bottom:1px solid var(--border);font-family:var(--mono);font-size:11px;color:var(--yellow);font-weight:600}
-.dbg-body{padding:16px;font-family:var(--mono);font-size:11px;line-height:1.6;color:var(--text2);white-space:pre-wrap;overflow-x:auto}
-.prompt-panel{border-top:1px solid var(--border);padding:16px 24px;background:var(--surface)}
-.plabel{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--text3);text-transform:uppercase;margin-bottom:8px}
-.presets{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.result-body{padding:16px 20px;font-size:14px;line-height:1.8;color:var(--text);white-space:pre-wrap}
+ 
+/* transcript modal */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;display:none;align-items:center;justify-content:center}
+.modal-bg.open{display:flex}
+.modal{background:var(--surface);border:1px solid var(--border2);border-radius:8px;width:680px;max-width:95vw;max-height:85vh;display:flex;flex-direction:column}
+.modal-hdr{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+.modal-title{font-family:var(--mono);font-size:12px;font-weight:600}
+.modal-x{background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;padding:2px 6px;line-height:1}
+.modal-x:hover{color:var(--text)}
+.modal-body{padding:16px 18px;overflow-y:auto;flex:1;font-family:var(--mono);font-size:12px;line-height:1.7;color:var(--text2);white-space:pre-wrap}
+.modal-body::-webkit-scrollbar{width:4px}
+.modal-body::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+.modal-foot{padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;flex-shrink:0}
+.speaker-name{color:var(--accent);font-weight:600;margin-right:6px}
+ 
+/* cfg modal */
+.cfg-modal{background:var(--surface);border:1px solid var(--border2);border-radius:8px;width:460px;max-width:90vw}
+.cfg-hdr{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.cfg-title{font-family:var(--mono);font-size:12px;font-weight:600}
+.cfg-body{padding:18px}
+.cfg-foot{padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
+.help{font-size:10px;color:var(--text3);margin-top:3px;line-height:1.4}
+.divider{height:1px;background:var(--border);margin:12px 0}
+ 
+/* ── PROMPT PANEL ── */
+.prompt-panel{border-top:1px solid var(--border);padding:16px 20px;background:var(--surface);flex-shrink:0}
+.presets{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px}
 .preset{font-family:var(--mono);font-size:10px;padding:4px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:3px;color:var(--text2);cursor:pointer;transition:all .1s}
-.preset:hover{border-color:var(--accent);color:var(--accent)}
-.prow{display:flex;gap:8px}
-textarea{font-family:var(--sans);font-size:13px;resize:none;height:68px;line-height:1.5}
-.abtn{background:var(--accent);color:#000;border:none;border-radius:4px;padding:0 20px;height:68px;cursor:pointer;font-family:var(--mono);font-size:12px;font-weight:600;transition:all .15s;min-width:90px}
+.preset:hover{border-color:var(--accent);color:var(--accent);background:var(--adim)}
+.prow{display:flex;gap:8px;align-items:flex-end}
+textarea{font-family:var(--sans);font-size:13px;resize:none;line-height:1.5;height:72px}
+.abtn{background:var(--accent);color:#000;border:none;border-radius:6px;padding:0 24px;height:72px;cursor:pointer;font-family:var(--mono);font-size:12px;font-weight:700;transition:all .15s;min-width:100px;letter-spacing:.03em}
 .abtn:hover{background:var(--accent2)}
 .abtn:disabled{opacity:.4;cursor:not-allowed}
-.mini-btn{font-size:10px;padding:3px 8px;border:1px solid var(--border);border-radius:3px;background:transparent;color:var(--text2);cursor:pointer}
-.mini-btn:hover{border-color:var(--border2);color:var(--text)}
-.tab-btn{flex:1;padding:10px 8px;background:transparent;border:none;border-bottom:2px solid transparent;color:var(--text3);font-family:var(--mono);font-size:11px;cursor:pointer;transition:all .15s;font-weight:500}
-.tab-btn:hover{color:var(--text2)}
-.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
 .spinner{display:inline-block;width:12px;height:12px;border:2px solid rgba(0,0,0,.2);border-top-color:#000;border-radius:50%;animation:spin .7s linear infinite}
 .spinner-w{border-color:rgba(255,255,255,.2);border-top-color:#fff}
 @keyframes spin{to{transform:rotate(360deg)}}
-.toast{position:fixed;bottom:20px;right:20px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:10px 14px;font-family:var(--mono);font-size:12px;color:var(--text);z-index:1000;transform:translateY(60px);opacity:0;transition:all .3s;pointer-events:none}
+.toast{position:fixed;bottom:20px;right:20px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:10px 14px;font-family:var(--mono);font-size:11px;color:var(--text);z-index:1000;transform:translateY(60px);opacity:0;transition:all .3s;pointer-events:none}
 .toast.show{transform:translateY(0);opacity:1}
 .toast.ok{border-color:rgba(0,229,160,.5);color:var(--accent)}
 .toast.err{border-color:rgba(255,92,92,.5);color:var(--red)}
-.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:none;align-items:center;justify-content:center}
-.modal-bg.open{display:flex}
-.modal{background:var(--surface);border:1px solid var(--border2);border-radius:8px;width:460px;max-width:90vw}
-.modal-hdr{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
-.modal-title{font-family:var(--mono);font-size:13px;font-weight:600}
-.modal-x{background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;line-height:1;padding:2px 6px}
-.modal-x:hover{color:var(--text)}
-.modal-body{padding:20px}
-.modal-foot{padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
-.help{font-size:11px;color:var(--text3);margin-top:4px;line-height:1.4}
-.div{height:1px;background:var(--border);margin:14px 0}
+.mini-btn{font-size:10px;padding:2px 7px;border:1px solid var(--border);border-radius:3px;background:transparent;color:var(--text2);cursor:pointer;font-family:var(--mono)}
+.mini-btn:hover{border-color:var(--border2);color:var(--text)}
+.dbg{background:var(--surface);border:1px solid rgba(255,192,67,.4);border-radius:6px}
+.dbg-hdr{padding:10px 14px;background:rgba(255,192,67,.08);border-bottom:1px solid var(--border);font-family:var(--mono);font-size:11px;color:var(--yellow);font-weight:600;border-radius:6px 6px 0 0}
+.dbg-body{padding:14px;font-family:var(--mono);font-size:11px;line-height:1.6;color:var(--text2);white-space:pre-wrap;overflow-x:auto}
 </style>
 </head>
 <body>
  
-<div class="modal-bg" id="modal">
-  <div class="modal">
-    <div class="modal-hdr">
-      <span class="modal-title">API Configuration</span>
+<!-- CFG MODAL -->
+<div class="modal-bg" id="cfgModal">
+  <div class="cfg-modal">
+    <div class="cfg-hdr">
+      <span class="cfg-title">API Configuration</span>
       <button class="modal-x" id="mClose">x</button>
     </div>
-    <div class="modal-body">
+    <div class="cfg-body">
       <div class="ig"><label>AIRCALL API ID</label><input type="text" id="cfgId" placeholder="Your Aircall API ID"><div class="help">Aircall Dashboard &rarr; Integrations &rarr; API Keys</div></div>
       <div class="ig"><label>AIRCALL API TOKEN</label><input type="password" id="cfgToken" placeholder="Your Aircall API Token"></div>
-      <div class="div"></div>
+      <div class="divider"></div>
       <div class="ig"><label>ANTHROPIC API KEY</label><input type="password" id="cfgKey" placeholder="sk-ant-..."><div class="help">console.anthropic.com &rarr; API Keys</div></div>
     </div>
+    <div class="cfg-foot">
+      <button class="btn" id="mCancel" style="width:auto;padding:6px 14px">Cancel</button>
+      <button class="btn btn-primary" id="mSave" style="width:auto;padding:6px 14px">Save</button>
+    </div>
+  </div>
+</div>
+ 
+<!-- TRANSCRIPT MODAL -->
+<div class="modal-bg" id="transcriptModal">
+  <div class="modal">
+    <div class="modal-hdr">
+      <span class="modal-title" id="tModalTitle">Transcript</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="mini-btn" id="tModalSave">Save</button>
+        <button class="modal-x" id="tModalClose">x</button>
+      </div>
+    </div>
+    <div class="modal-body" id="tModalBody"></div>
     <div class="modal-foot">
-      <button class="btn" id="mCancel" style="width:auto;padding:6px 16px">Cancel</button>
-      <button class="btn btn-primary" id="mSave" style="width:auto;padding:6px 16px">Save</button>
+      <button class="btn" id="tModalAnalyze" style="width:auto;padding:6px 14px;background:var(--accent);color:#000;border-color:var(--accent)">Analyze this call</button>
     </div>
   </div>
 </div>
@@ -124,125 +165,132 @@ textarea{font-family:var(--sans);font-size:13px;resize:none;height:68px;line-hei
 <header>
   <div class="logo"><div class="dot"></div>TRANSCRIPT ANALYZER</div>
   <div style="display:flex;gap:8px;align-items:center">
-    <span id="hStatus" style="font-family:var(--mono);font-size:11px;color:var(--text3)">not configured</span>
-    <button class="btn" id="cfgBtn" style="width:auto;padding:5px 12px">Configure</button>
+    <span id="hdrStatus" style="font-family:var(--mono);font-size:10px;color:var(--text3)">not configured</span>
+    <button class="btn" id="cfgBtn" style="width:auto;padding:4px 10px">Configure</button>
   </div>
 </header>
  
 <div class="app">
+  <!-- SIDEBAR -->
   <div class="sidebar">
-    <div style="display:flex;border-bottom:1px solid var(--border)">
+    <div class="tab-row">
       <button class="tab-btn active" id="tabAircall" onclick="switchTab('aircall')">Aircall</button>
       <button class="tab-btn" id="tabHubspot" onclick="switchTab('hubspot')">HubSpot</button>
     </div>
  
-    <div id="aircallPanel">
-    <div class="sec">
-      <div class="sec-label">Fetch Calls</div>
-      <div class="ig"><label>DATE RANGE</label>
-        <select id="dateRange">
-          <option value="1">Last 24 hours</option>
-          <option value="3">Last 3 days</option>
-          <option value="7" selected>Last 7 days</option>
-          <option value="14">Last 14 days</option>
-          <option value="30">Last 30 days</option>
-          <option value="60">Last 60 days</option>
-          <option value="90">Last 90 days</option>
-          <option value="180">Last 6 months</option>
-        </select>
+    <!-- AIRCALL PANEL -->
+    <div id="aircallPanel" style="display:flex;flex-direction:column;flex:1;overflow:hidden;min-height:0">
+      <div class="sec">
+        <div class="sec-label">Fetch Calls</div>
+        <div class="ig"><label>DATE RANGE</label>
+          <select id="dateRangePreset" onchange="handlePresetChange()">
+            <option value="1">Last 24 hours</option>
+            <option value="3">Last 3 days</option>
+            <option value="7" selected>Last 7 days</option>
+            <option value="14">Last 14 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="60">Last 60 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="180">Last 6 months</option>
+            <option value="custom">Custom range...</option>
+          </select>
+        </div>
+        <div class="ig" id="customDateRow" style="display:none">
+          <label>FROM</label>
+          <input type="date" id="dateFrom" style="margin-bottom:6px">
+          <label style="margin-top:2px">TO</label>
+          <input type="date" id="dateTo">
+        </div>
+        <div class="ig"><label>SHOW</label>
+          <select id="filterType">
+            <option value="all">All calls</option>
+            <option value="transcript">With transcript only</option>
+            <option value="inbound">Inbound only</option>
+            <option value="outbound">Outbound only</option>
+          </select>
+        </div>
+        <div class="ig"><label>AGENT</label>
+          <select id="agentFilter"><option value="all">All agents</option></select>
+        </div>
+        <button class="btn btn-primary" id="fetchBtn"><span id="fetchTxt">Fetch Calls</span></button>
       </div>
-      <div class="ig"><label>SHOW</label>
-        <select id="filterType">
-          <option value="all">All calls</option>
-          <option value="transcript">With transcript only</option>
-          <option value="inbound">Inbound only</option>
-          <option value="outbound">Outbound only</option>
-        </select>
+      <div class="sec" style="padding:10px 14px">
+        <div class="sec-label" style="margin-bottom:6px">Lookup by Call ID</div>
+        <div style="display:flex;gap:6px">
+          <input type="text" id="callIdInput" placeholder="e.g. 5237603" style="flex:1">
+          <button class="btn" id="lookupBtn" style="width:auto;padding:5px 10px">Go</button>
+        </div>
       </div>
-      <div class="ig"><label>AGENT</label>
-        <select id="agentFilter">
-          <option value="all">All agents</option>
-        </select>
+      <div class="list-hdr">
+        <span class="call-count" id="callCount">No calls loaded</span>
+        <div style="display:flex;gap:3px">
+          <button class="mini-btn" id="selAll">All</button>
+          <button class="mini-btn" id="selNone">None</button>
+        </div>
       </div>
-      <button class="btn btn-primary" id="fetchBtn">Fetch Calls</button>
+      <div class="call-list" id="callList">
+        <div class="empty-st"><div style="font-size:20px;opacity:.2">&#128222;</div><div>Configure keys and fetch calls</div></div>
+      </div>
     </div>
-    <div class="sec">
-      <div class="sec-label">Lookup by Call ID</div>
-      <div class="ig">
-        <label>CALL ID</label>
-        <input type="text" id="callIdInput" placeholder="e.g. 5237603">
-      </div>
-      <button class="btn btn-primary" id="lookupBtn">Lookup Call</button>
-    </div>
-    </div><!-- end aircallPanel -->
  
-    <div id="hubspotPanel" style="display:none">
-    <div class="sec">
-      <div class="sec-label">HubSpot Calls</div>
-      <div class="ig"><label>DATE RANGE</label>
-        <select id="hsDays">
-          <option value="1">Last 24 hours</option>
-          <option value="3">Last 3 days</option>
-          <option value="7" selected>Last 7 days</option>
-          <option value="14">Last 14 days</option>
-          <option value="30">Last 30 days</option>
-        </select>
+    <!-- HUBSPOT PANEL -->
+    <div id="hubspotPanel" style="display:none;flex-direction:column;flex:1;overflow:hidden;min-height:0">
+      <div class="sec">
+        <div class="sec-label">HubSpot Calls</div>
+        <div class="ig"><label>DATE RANGE</label>
+          <select id="hsDays">
+            <option value="1">Last 24 hours</option>
+            <option value="3">Last 3 days</option>
+            <option value="7" selected>Last 7 days</option>
+            <option value="14">Last 14 days</option>
+            <option value="30">Last 30 days</option>
+          </select>
+        </div>
+        <div class="ig"><label>TYPE</label>
+          <select id="hsFilter">
+            <option value="all">All calls</option>
+            <option value="inbound">Inbound</option>
+            <option value="outbound">Outbound</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" id="hsFetchBtn">Fetch HubSpot Calls</button>
       </div>
-      <div class="ig"><label>TYPE</label>
-        <select id="hsFilter">
-          <option value="all">All calls</option>
-          <option value="inbound">Inbound</option>
-          <option value="outbound">Outbound</option>
-        </select>
+      <div class="list-hdr">
+        <span class="call-count" id="hsCallCount">No calls loaded</span>
+        <div style="display:flex;gap:3px">
+          <button class="mini-btn" id="hsSelAll">All</button>
+          <button class="mini-btn" id="hsSelNone">None</button>
+        </div>
       </div>
-      <button class="btn btn-primary" id="hsFetchBtn">Fetch HubSpot Calls</button>
-    </div>
-    <div class="list-hdr">
-      <span class="call-count" id="hsCallCount">No calls loaded</span>
-      <div style="display:flex;gap:4px">
-        <button class="mini-btn" id="hsSelAll">All</button>
-        <button class="mini-btn" id="hsSelNone">None</button>
-      </div>
-    </div>
-    <div class="call-list" id="hsCallList">
-      <div class="empty-st"><div style="font-size:11px">Fetch HubSpot calls to begin</div></div>
-    </div>
-    </div><!-- end hubspotPanel -->
- 
-    <div id="aircallListPanel">
-    <div class="list-hdr">
-      <span class="call-count" id="callCount">No calls loaded</span>
-      <div style="display:flex;gap:4px">
-        <button class="mini-btn" id="selAll">All</button>
-        <button class="mini-btn" id="selNone">None</button>
+      <div class="call-list" id="hsCallList">
+        <div class="empty-st"><div>Fetch HubSpot calls to begin</div></div>
       </div>
     </div>
-    <div class="call-list" id="callList">
-      <div class="empty-st"><div style="font-size:28px;opacity:.2">&#128222;</div><div style="font-size:11px">Configure keys and fetch calls</div></div>
-    </div>
-      </div><!-- end aircallListPanel -->
- 
   </div>
  
+  <!-- MAIN -->
   <div class="main">
-    <div class="toolbar">
+    <!-- SELECTION BAR -->
+    <div class="sel-bar">
       <span class="badge" id="selBadge">0 selected</span>
-      <button class="btn" id="viewBtn" style="width:auto;padding:5px 12px">View Transcripts</button>
-      <button class="btn" id="saveBtn" style="width:auto;padding:5px 12px">Save as Files</button>
-      <button class="btn" id="saveAllBtn" style="width:auto;padding:5px 12px">Save All as One</button>
-      <button class="btn" id="dbgBtn" style="width:auto;padding:5px 12px">Debug API</button>
+      <button class="sel-btn" id="viewBtn">View Transcript</button>
+      <button class="sel-btn" id="saveBtn">Save Files</button>
+      <button class="sel-btn" id="saveAllBtn">Save All as One</button>
+      <button class="sel-btn" id="dbgBtn">Debug API</button>
       <div style="flex:1"></div>
-      <button class="btn" id="clearBtn" style="width:auto;padding:5px 12px">Clear</button>
+      <button class="sel-btn" id="clearBtn">Clear</button>
     </div>
-    <div class="tarea" id="tArea">
+ 
+    <!-- ANALYSIS AREA -->
+    <div class="analysis-area" id="analysisArea">
       <div class="welcome">
-        <div style="font-family:var(--mono);font-size:48px;font-weight:600;color:var(--border2)">AI</div>
-        <div style="font-family:var(--mono);font-size:13px;color:var(--text2)">SUPPORT CALL ANALYZER</div>
-        <div style="font-size:12px;max-width:380px;line-height:1.6">Configure your API keys, fetch calls from Aircall, select transcripts, and analyze with Claude.</div>
+        <div class="welcome-title">Support Call Analyzer</div>
+        <div class="welcome-sub">Select calls from the sidebar, choose a prompt, and hit Analyze. Results appear here.</div>
       </div>
     </div>
+ 
+    <!-- PROMPT PANEL -->
     <div class="prompt-panel">
-      <div class="plabel">Prompt Claude</div>
       <div class="presets">
         <button class="preset" data-p="trends">Find Trends</button>
         <button class="preset" data-p="issues">Common Issues</button>
@@ -262,6 +310,7 @@ textarea{font-family:var(--sans);font-size:13px;resize:none;height:68px;line-hei
 <div class="toast" id="toast"></div>
  
 <script>
+ 
 var calls = [], selected = new Set(), cfg = {}, lastDebug = null;
 var PROXY = "https://corsproxy.io/?url=";
  
@@ -358,14 +407,25 @@ async function fetchCalls() {
   var btn = document.getElementById("fetchBtn");
   btn.disabled = true;
   btn.innerHTML = "<span class='spinner'></span> Fetching...";
-  var days = parseInt(document.getElementById("dateRange").value);
-  var from = Math.floor((Date.now()-days*86400000)/1000);
+  var preset = document.getElementById("dateRangePreset").value;
+  var from, to;
+  if(preset === "custom") {
+    var fromVal = document.getElementById("dateFrom").value;
+    var toVal = document.getElementById("dateTo").value;
+    if(!fromVal || !toVal) { showToast("Please select both From and To dates","error"); btn.disabled=false; btn.innerHTML="Fetch Calls"; return; }
+    from = Math.floor(new Date(fromVal).getTime()/1000);
+    to = Math.floor(new Date(toVal + "T23:59:59").getTime()/1000);
+  } else {
+    var days = parseInt(preset);
+    from = Math.floor((Date.now()-days*86400000)/1000);
+    to = Math.floor(Date.now()/1000);
+  }
   var filter = document.getElementById("filterType").value;
   try {
     var allCalls = [], page = 1, hasMore = true;
     while(hasMore && allCalls.length < 2000) {
       btn.innerHTML = "<span class='spinner'></span> Fetching calls... "+allCalls.length;
-      var r = await aircallFetch("calls?from="+from+"&per_page=50&page="+page+"&order=DESC");
+      var r = await aircallFetch("calls?from="+from+(to?"&to="+to:"")+"&per_page=50&page="+page+"&order=DESC");
       if(!r.ok) { var e = await r.json().catch(function(){return{};}); throw new Error(e.message||"Aircall error "+r.status); }
       var d = await r.json();
       var pg = d.calls || [];
@@ -793,8 +853,129 @@ async function analyze() {
   }
 }
  
+function handlePresetChange() {
+  var val = document.getElementById("dateRangePreset").value;
+  var row = document.getElementById("customDateRow");
+  row.style.display = val === "custom" ? "" : "none";
+  if(val === "custom") {
+    // Default to last 7 days as starting point
+    var now = new Date();
+    var week = new Date(now - 7*86400000);
+    document.getElementById("dateTo").value = now.toISOString().split("T")[0];
+    document.getElementById("dateFrom").value = week.toISOString().split("T")[0];
+  }
+}
+ 
 loadCfg();
 if(!cfg.aircallId) setTimeout(openModal, 500);
+ 
+// Wire transcript modal
+document.getElementById("tModalClose").addEventListener("click", function(){ document.getElementById("transcriptModal").classList.remove("open"); });
+document.getElementById("tModalSave").addEventListener("click", function(){
+  var id = parseInt(document.getElementById("transcriptModal").dataset.callId);
+  var c = calls.find(function(x){return x.id===id;});
+  if(c) dlTranscript(c);
+});
+document.getElementById("tModalAnalyze").addEventListener("click", function(){
+  document.getElementById("transcriptModal").classList.remove("open");
+  var prompt = document.getElementById("promptInput").value.trim();
+  if(!prompt) document.getElementById("promptInput").value = PRESETS.summary;
+  analyze();
+});
+ 
+// Override viewSelected to use modal instead of inline display
+document.getElementById("viewBtn").addEventListener("click", function(){
+  var sel = calls.filter(function(c){return selected.has(c.id);});
+  if(!sel.length) { showToast("Select at least one call","error"); return; }
+  if(sel.length === 1) {
+    openTranscriptModal(sel[0]);
+  } else {
+    // Show first selected call
+    openTranscriptModal(sel[0]);
+  }
+});
+ 
+function openTranscriptModal(call) {
+  var hasT = call.transcript && call.transcript.length;
+  var d = new Date(call.started_at*1000).toLocaleString();
+  var name = (call.contact&&call.contact.name)||call.raw_digits||"Unknown";
+  var agent = (call.user&&call.user.name)||"Unknown Agent";
+  document.getElementById("tModalTitle").textContent = name + " → " + agent + " · " + d;
+  document.getElementById("transcriptModal").dataset.callId = call.id;
+  var body = document.getElementById("tModalBody");
+  if(hasT) {
+    body.innerHTML = call.transcript.split("\n").map(function(line){
+      var m = line.match(/^([^:]+):\s*(.*)/);
+      return m ? "<span class=\"speaker-name\">"+esc(m[1])+"</span>"+esc(m[2])+"\n" : esc(line)+"\n";
+    }).join("");
+  } else {
+    body.innerHTML = "<span style=\"color:var(--text3);font-style:italic\">No transcript available for this call.</span>";
+  }
+  document.getElementById("transcriptModal").classList.add("open");
+}
+ 
+// Click on call item opens transcript modal on double click, single click selects
+document.getElementById("callList").addEventListener("dblclick", function(e){
+  var item = e.target.closest(".call-item");
+  if(item) {
+    var id = parseInt(item.dataset.id);
+    var c = calls.find(function(x){return x.id===id;});
+    if(c) openTranscriptModal(c);
+  }
+});
+ 
+// Override clearMain
+document.getElementById("clearBtn").addEventListener("click", function(){
+  document.getElementById("analysisArea").innerHTML = "<div class=\"welcome\"><div class=\"welcome-title\">Support Call Analyzer</div><div class=\"welcome-sub\">Select calls from the sidebar, choose a prompt, and hit Analyze.</div></div>";
+});
+ 
+// Fix analyze to write to analysisArea instead of tArea
+var _realAnalyze = analyze;
+async function analyze() {
+  if(!cfg.anthropicKey){showToast("Configure Anthropic API key first","error");openModal();return;}
+  var prompt=document.getElementById("promptInput").value.trim();
+  if(!prompt){showToast("Enter a prompt","error");return;}
+  var sel=calls.filter(function(c){return selected.has(c.id);});
+  var hsWithNotes=hsCalls.filter(function(c){return hsSelected.has(c.id)&&c.transcript;});
+  var allSel=[].concat(sel,hsWithNotes);
+  if(!allSel.length){showToast("Select at least one call","error");return;}
+  var withT=allSel.filter(function(c){return c.transcript;});
+  if(!withT.length){showToast("None of the selected calls have transcripts","error");return;}
+  var btn=document.getElementById("analyzeBtn");
+  btn.disabled=true;btn.innerHTML="<span class=\"spinner spinner-w\"></span>";
+  var block=withT.map(function(c,i){
+    var d=new Date(c.started_at*1000).toLocaleString();
+    var name=(c.contact&&c.contact.name)||c.raw_digits||"Unknown";
+    var agent=(c.user&&c.user.name)||"Unknown";
+    var src=c._source==="hubspot"?" [HubSpot]":"";
+    return "--- CALL "+(i+1)+src+" ---\nDate: "+d+"\nContact: "+name+"\nAgent: "+agent+"\nDuration: "+dur(c.duration)+"\n\n"+c.transcript;
+  }).join("\n\n");
+  var full=prompt+"\n\n===== TRANSCRIPTS ("+withT.length+" calls) =====\n\n"+block;
+  var area=document.getElementById("analysisArea");
+  var loader=document.createElement("div");
+  loader.id="loader";loader.className="result";
+  loader.innerHTML="<div class=\"result-hdr\"><span class=\"result-title\">Analyzing "+withT.length+" transcript"+(withT.length>1?"s":"")+"...</span></div><div style=\"height:3px;background:var(--accent);animation:pulse 1s ease-in-out infinite\"></div>";
+  area.insertBefore(loader,area.firstChild);area.scrollTop=0;
+  try{
+    var res=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":cfg.anthropicKey,"anthropic-version":"2023-06-01"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,messages:[{role:"user",content:full}]})});
+    if(!res.ok){var e=await res.json().catch(function(){return{};});throw new Error((e.error&&e.error.message)||"API error "+res.status);}
+    var data=await res.json();
+    var result=(data.content&&data.content[0]&&data.content[0].text)||"No response";
+    var l=document.getElementById("loader");if(l)l.remove();
+    var rd=document.createElement("div");rd.className="result";
+    var ts=new Date().toLocaleTimeString();
+    var selCount=withT.length;
+    rd.innerHTML="<div class=\"result-hdr\"><span class=\"result-title\">Analysis · "+selCount+" call"+(selCount>1?"s":"")+" · "+ts+"</span><button class=\"mini-btn\" data-save-analysis>Save</button></div><div class=\"result-body\">"+esc(result)+"</div>";
+    area.insertBefore(rd,area.firstChild);area.scrollTop=0;
+    showToast("Analysis complete","success");
+  }catch(ex){var l=document.getElementById("loader");if(l)l.remove();showToast("Error: "+ex.message,"error");}
+  finally{btn.disabled=false;btn.innerHTML="Analyze";}
+}
+ 
+document.getElementById("analysisArea").addEventListener("click",function(e){
+  var sa=e.target.closest("[data-save-analysis]");
+  if(sa){var txt=sa.closest(".result").querySelector(".result-body").textContent;var blob=new Blob([txt],{type:"text/plain"});var url=URL.createObjectURL(blob);var a=document.createElement("a");a.href=url;a.download="analysis_"+new Date().toISOString().split("T")[0]+".txt";document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);showToast("Saved","success");}
+});
 </script>
 </body>
 </html>
