@@ -118,6 +118,22 @@ textarea{font-family:var(--sans);font-size:13px;resize:none;line-height:1.5;heig
 .toast.err{border-color:rgba(255,92,92,.5);color:var(--red)}
 .mini-btn{font-size:10px;padding:2px 7px;border:1px solid var(--border);border-radius:3px;background:transparent;color:var(--text2);cursor:pointer;font-family:var(--mono)}
 .mini-btn:hover{border-color:var(--border2);color:var(--text)}
+.cal-wrap{position:relative}
+.cal-popup{display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:300;background:var(--surface);border:1px solid var(--border2);border-radius:6px;padding:10px;width:220px;box-shadow:0 4px 20px rgba(0,0,0,.4)}
+.cal-popup.open{display:block}
+.cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.cal-nav-btn{background:none;border:1px solid var(--border);border-radius:3px;color:var(--text2);cursor:pointer;padding:2px 7px;font-size:12px;font-family:var(--mono)}
+.cal-nav-btn:hover{border-color:var(--border2);color:var(--text)}
+.cal-month{font-family:var(--mono);font-size:11px;color:var(--text);font-weight:600}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.cal-dow{font-family:var(--mono);font-size:9px;color:var(--text3);text-align:center;padding:3px 0}
+.cal-day{font-family:var(--mono);font-size:10px;text-align:center;padding:4px 2px;border-radius:3px;cursor:pointer;color:var(--text2);transition:all .1s;border:1px solid transparent}
+.cal-day:hover{background:var(--surface2);color:var(--text)}
+.cal-day.today{border-color:var(--border2);color:var(--text)}
+.cal-day.selected{background:var(--accent);color:#000;font-weight:600}
+.cal-day.other-month{color:var(--text3);opacity:.4}
+.cal-day.empty{cursor:default}
+ 
 .dbg{background:var(--surface);border:1px solid rgba(255,192,67,.4);border-radius:6px}
 .dbg-hdr{padding:10px 14px;background:rgba(255,192,67,.08);border-bottom:1px solid var(--border);font-family:var(--mono);font-size:11px;color:var(--yellow);font-weight:600;border-radius:6px 6px 0 0}
 .dbg-body{padding:14px;font-family:var(--mono);font-size:11px;line-height:1.6;color:var(--text2);white-space:pre-wrap;overflow-x:auto}
@@ -195,11 +211,21 @@ textarea{font-family:var(--sans);font-size:13px;resize:none;line-height:1.5;heig
             <option value="custom">Custom range...</option>
           </select>
         </div>
-        <div class="ig" id="customDateRow" style="display:none">
-          <label>FROM</label>
-          <input type="date" id="dateFrom" style="margin-bottom:6px">
-          <label style="margin-top:2px">TO</label>
-          <input type="date" id="dateTo">
+        <div id="customDateRow" style="display:none">
+          <div class="ig">
+            <label>FROM</label>
+            <div class="cal-wrap" id="calFromWrap">
+              <input type="text" id="dateFrom" placeholder="Select date" readonly onclick="toggleCal('from')" style="cursor:pointer;background:var(--bg)">
+              <div class="cal-popup" id="calFrom"></div>
+            </div>
+          </div>
+          <div class="ig">
+            <label>TO</label>
+            <div class="cal-wrap" id="calToWrap">
+              <input type="text" id="dateTo" placeholder="Select date" readonly onclick="toggleCal('to')" style="cursor:pointer;background:var(--bg)">
+              <div class="cal-popup" id="calTo"></div>
+            </div>
+          </div>
         </div>
         <div class="ig"><label>SHOW</label>
           <select id="filterType">
@@ -410,11 +436,13 @@ async function fetchCalls() {
   var preset = document.getElementById("dateRangePreset").value;
   var from, to;
   if(preset === "custom") {
-    var fromVal = document.getElementById("dateFrom").value;
-    var toVal = document.getElementById("dateTo").value;
+    var fromVal = calState.from.selected;
+    var toVal = calState.to.selected;
     if(!fromVal || !toVal) { showToast("Please select both From and To dates","error"); btn.disabled=false; btn.innerHTML="Fetch Calls"; return; }
     from = Math.floor(new Date(fromVal).getTime()/1000);
-    to = Math.floor(new Date(toVal + "T23:59:59").getTime()/1000);
+    var toParts = toVal.split("-");
+    var toDate = new Date(parseInt(toParts[0]),parseInt(toParts[1])-1,parseInt(toParts[2]),23,59,59);
+    to = Math.floor(toDate.getTime()/1000);
   } else {
     var days = parseInt(preset);
     from = Math.floor((Date.now()-days*86400000)/1000);
@@ -853,18 +881,120 @@ async function analyze() {
   }
 }
  
+var calState = {
+  from: { year: new Date().getFullYear(), month: new Date().getMonth(), selected: null },
+  to:   { year: new Date().getFullYear(), month: new Date().getMonth(), selected: null }
+};
+ 
 function handlePresetChange() {
   var val = document.getElementById("dateRangePreset").value;
   var row = document.getElementById("customDateRow");
   row.style.display = val === "custom" ? "" : "none";
   if(val === "custom") {
-    // Default to last 7 days as starting point
     var now = new Date();
-    var week = new Date(now - 7*86400000);
-    document.getElementById("dateTo").value = now.toISOString().split("T")[0];
-    document.getElementById("dateFrom").value = week.toISOString().split("T")[0];
+    var week = new Date(now - 6*86400000);
+    calState.to.selected = fmtDate(now);
+    calState.from.selected = fmtDate(week);
+    calState.to.year = now.getFullYear(); calState.to.month = now.getMonth();
+    calState.from.year = week.getFullYear(); calState.from.month = week.getMonth();
+    document.getElementById("dateTo").value = fmtDateDisplay(now);
+    document.getElementById("dateFrom").value = fmtDateDisplay(week);
   }
 }
+ 
+function fmtDate(d) {
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+ 
+function fmtDateDisplay(d) {
+  return d.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+}
+ 
+function toggleCal(which) {
+  var fromPop = document.getElementById("calFrom");
+  var toPop = document.getElementById("calTo");
+  if(which === "from") {
+    toPop.classList.remove("open");
+    var wasOpen = fromPop.classList.contains("open");
+    fromPop.classList.toggle("open");
+    if(!wasOpen) renderCal("from");
+  } else {
+    fromPop.classList.remove("open");
+    var wasOpen = toPop.classList.contains("open");
+    toPop.classList.toggle("open");
+    if(!wasOpen) renderCal("to");
+  }
+}
+ 
+function renderCal(which) {
+  var state = calState[which];
+  var popup = document.getElementById(which === "from" ? "calFrom" : "calTo");
+  var MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  var DAYS = ["Su","Mo","Tu","We","Th","Fr","Sa"];
+  var today = fmtDate(new Date());
+ 
+  var firstDay = new Date(state.year, state.month, 1).getDay();
+  var daysInMonth = new Date(state.year, state.month+1, 0).getDate();
+  var daysInPrev = new Date(state.year, state.month, 0).getDate();
+ 
+  var html = "<div class=\"cal-nav\">" +
+    "<button class=\"cal-nav-btn\" onclick=\"calNav('"+which+"',\'prev\')\">&lt;</button>" +
+    "<span class=\"cal-month\">"+MONTHS[state.month]+" "+state.year+"</span>" +
+    "<button class=\"cal-nav-btn\" onclick=\"calNav('"+which+"',\'next\')\">&gt;</button>" +
+    "</div><div class=\"cal-grid\">";
+ 
+  DAYS.forEach(function(d){ html += "<div class=\"cal-dow\">"+d+"</div>"; });
+ 
+  // prev month overflow
+  for(var i = 0; i < firstDay; i++) {
+    html += "<div class=\"cal-day other-month\">"+(daysInPrev - firstDay + i + 1)+"</div>";
+  }
+ 
+  // current month days
+  for(var d = 1; d <= daysInMonth; d++) {
+    var dateStr = state.year+"-"+String(state.month+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");
+    var cls = "cal-day";
+    if(dateStr === today) cls += " today";
+    if(dateStr === state.selected) cls += " selected";
+    html += "<div class=\""+cls+"\" onclick=\"selectCalDay('"+which+"','"+dateStr+"')\" >"+d+"</div>";
+  }
+ 
+  // next month overflow
+  var remaining = (7 - (firstDay + daysInMonth) % 7) % 7;
+  for(var i = 1; i <= remaining; i++) {
+    html += "<div class=\"cal-day other-month\">"+i+"</div>";
+  }
+ 
+  html += "</div>";
+  popup.innerHTML = html;
+}
+ 
+function calNav(which, dir) {
+  var state = calState[which];
+  if(dir === "prev") {
+    state.month--; if(state.month < 0){ state.month=11; state.year--; }
+  } else {
+    state.month++; if(state.month > 11){ state.month=0; state.year++; }
+  }
+  renderCal(which);
+}
+ 
+function selectCalDay(which, dateStr) {
+  calState[which].selected = dateStr;
+  var parts = dateStr.split("-");
+  var d = new Date(parseInt(parts[0]), parseInt(parts[1])-1, parseInt(parts[2]));
+  var inputId = which === "from" ? "dateFrom" : "dateTo";
+  document.getElementById(inputId).value = fmtDateDisplay(d);
+  document.getElementById(which === "from" ? "calFrom" : "calTo").classList.remove("open");
+}
+ 
+// Close calendars when clicking outside
+document.addEventListener("click", function(e) {
+  if(!e.target.closest(".cal-wrap")) {
+    document.getElementById("calFrom").classList.remove("open");
+    document.getElementById("calTo").classList.remove("open");
+  }
+});
  
 loadCfg();
 if(!cfg.aircallId) setTimeout(openModal, 500);
