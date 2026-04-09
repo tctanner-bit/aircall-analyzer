@@ -338,6 +338,10 @@ textarea{font-family:var(--sans);font-size:13px;resize:none;line-height:1.5;heig
 <script>
  
 var calls = [], selected = new Set(), cfg = {}, lastDebug = null;
+var calState = {
+  from: { year: new Date().getFullYear(), month: new Date().getMonth(), selected: null },
+  to:   { year: new Date().getFullYear(), month: new Date().getMonth(), selected: null }
+};
 var PROXY = "https://corsproxy.io/?url=";
  
 var PRESETS = {
@@ -881,11 +885,6 @@ async function analyze() {
   }
 }
  
-var calState = {
-  from: { year: new Date().getFullYear(), month: new Date().getMonth(), selected: null },
-  to:   { year: new Date().getFullYear(), month: new Date().getMonth(), selected: null }
-};
- 
 function handlePresetChange() {
   var val = document.getElementById("dateRangePreset").value;
   var row = document.getElementById("customDateRow");
@@ -911,6 +910,7 @@ function fmtDateDisplay(d) {
 }
  
 function toggleCal(which) {
+  if(!calState) return;
   var fromPop = document.getElementById("calFrom");
   var toPop = document.getElementById("calTo");
   if(which === "from") {
