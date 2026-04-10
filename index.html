@@ -384,8 +384,8 @@ function updateStatus() {
   }
 }
  
-function openModal() { document.getElementById("modal").classList.add("open"); }
-function closeModal() { document.getElementById("modal").classList.remove("open"); }
+function openModal() { document.getElementById("cfgModal").classList.add("open"); }
+function closeModal() { document.getElementById("cfgModal").classList.remove("open"); }
  
 function saveCfg() {
   cfg = {
@@ -584,18 +584,7 @@ function renderList() {
 function viewSelected() {
   var sel = calls.filter(function(c){return selected.has(c.id);});
   if(!sel.length) { showToast("Select at least one call","error"); return; }
-  var area = document.getElementById("tArea");
-  area.innerHTML = sel.map(function(c) {
-    var hasT = c.transcript && c.transcript.length;
-    var d = new Date(c.started_at*1000).toLocaleString();
-    var name = (c.contact&&c.contact.name)||c.raw_digits||"Unknown";
-    var agent = (c.user&&c.user.name)||"Unknown Agent";
-    var body = hasT ? c.transcript.split("\n").map(function(line){
-      var m = line.match(/^([^:]+):\s*(.*)/);
-      return m ? "<span style='color:var(--accent);font-weight:500'>"+esc(m[1])+"</span>: "+esc(m[2])+"\n" : esc(line)+"\n";
-    }).join("") : "<span style='color:var(--text3);font-style:italic'>No transcript available</span>";
-    return "<div class='tcard'><div class='tcard-hdr'><div><div class='tcard-title'>"+esc(name)+" &rarr; "+esc(agent)+"</div><div class='tcard-meta'>"+d+" &middot; "+dur(c.duration)+"</div></div>"+(hasT?"<button class='mini-btn' data-save='"+c.id+"'>Save</button>":"")+"</div><div class='tbody'>"+body+"</div></div>";
-  }).join("");
+  openTranscriptModal(sel[0]);
 }
  
 function dlTranscript(call) {
