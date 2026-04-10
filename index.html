@@ -374,7 +374,8 @@ function loadCfg() {
 }
  
 function updateStatus() {
-  var el = document.getElementById("hStatus");
+  var el = document.getElementById("hdrStatus");
+  if(!el) return;
   if(cfg.aircallId && cfg.aircallToken && cfg.anthropicKey) {
     el.innerHTML = "<span style='color:var(--accent)'>configured</span>";
   } else if(cfg.aircallId && cfg.aircallToken) {
