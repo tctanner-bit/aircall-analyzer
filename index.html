@@ -192,6 +192,7 @@ textarea{font-family:var(--sans);font-size:13px;resize:none;line-height:1.5;heig
     <div class="tab-row">
       <button class="tab-btn active" id="tabAircall" onclick="switchTab('aircall')">Aircall</button>
       <button class="tab-btn" id="tabHubspot" onclick="switchTab('hubspot')">HubSpot</button>
+      <button class="tab-btn" id="tabLibrary" onclick="switchTab('library')">Library</button>
     </div>
  
     <!-- AIRCALL PANEL -->
@@ -985,6 +986,215 @@ document.addEventListener("click", function(e) {
     document.getElementById("calTo").classList.remove("open");
   }
 });
+ 
+ 
+// ─── SUPABASE ─────────────────────────────────────────────────────────────────
+var libCalls = [], libSelected = new Set();
+ 
+async function sbFetch(path, method, body) {
+  method = method || "GET";
+  var headers = {
+    "Content-Type": "application/json",
+    "x-supabase-path": path,
+    "x-supabase-method": method
+  };
+  if(body) headers["x-supabase-body"] = JSON.stringify(body);
+  var r = await fetch("/api/supabase", { method: "POST", headers: headers });
+  return r;
+}
+ 
+async function saveCallsToSupabase(callsToSave) {
+  var withT = callsToSave.filter(function(c){ return c.transcript && c.transcript.length; });
+  if(!withT.length) return;
+  var rows = withT.map(function(c) {
+    return {
+      call_id: String(c.id),
+      contact_name: (c.contact && c.contact.name) || c.raw_digits || "Unknown",
+      agent_name: (c.user && c.user.name) || "Unknown",
+      direction: c.direction || "unknown",
+      duration_seconds: c.duration || 0,
+      started_at: new Date(c.started_at * 1000).toISOString(),
+      transcript: c.transcript,
+      source: c._source || "aircall"
+    };
+  });
+  try {
+    var r = await sbFetch("calls?on_conflict=call_id", "POST", rows);
+    if(r.ok) {
+      showToast("Saved "+withT.length+" transcript"+(withT.length>1?"s":"")+" to library", "success");
+    }
+  } catch(ex) {
+    console.error("Supabase save error:", ex);
+  }
+}
+ 
+async function saveAnalysisToSupabase(prompt, result, callIds) {
+  try {
+    await sbFetch("analyses", "POST", {
+      prompt: prompt,
+      result: result,
+      call_ids: callIds.map(String),
+      call_count: callIds.length
+    });
+  } catch(ex) {
+    console.error("Supabase analysis save error:", ex);
+  }
+}
+ 
+async function searchLibrary() {
+  var btn = document.getElementById("libSearchBtn");
+  btn.disabled = true;
+  btn.innerHTML = "<span class='spinner'></span> Searching...";
+  var search = document.getElementById("libSearch").value.trim();
+  var agent = document.getElementById("libAgent").value;
+  var fromDate = document.getElementById("libFrom").value;
+  var toDate = document.getElementById("libTo").value;
+ 
+  var filters = [];
+  if(agent) filters.push("agent_name=eq."+encodeURIComponent(agent));
+  if(fromDate) filters.push("started_at=gte."+fromDate+"T00:00:00Z");
+  if(toDate) filters.push("started_at=lte."+toDate+"T23:59:59Z");
+  if(search) filters.push("or=(contact_name.ilike.*"+encodeURIComponent(search)+"*,agent_name.ilike.*"+encodeURIComponent(search)+"*,transcript.ilike.*"+encodeURIComponent(search)+"*)");
+ 
+  var path = "calls?order=started_at.desc&limit=200";
+  if(filters.length) path += "&" + filters.join("&");
+ 
+  try {
+    var r = await sbFetch(path);
+    if(!r.ok) throw new Error("Search failed: " + r.status);
+    var data = await r.json();
+    libCalls = data;
+    libSelected.clear();
+    renderLibList();
+    document.getElementById("libCount").textContent = data.length + " results";
+    // Populate agent dropdown
+    populateLibAgents(data);
+  } catch(ex) {
+    showToast("Library error: " + ex.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = "Search";
+  }
+}
+ 
+function populateLibAgents(data) {
+  var agents = {};
+  data.forEach(function(c){ if(c.agent_name) agents[c.agent_name] = 1; });
+  var sel = document.getElementById("libAgent");
+  var current = sel.value;
+  sel.innerHTML = "<option value=\"\">All agents</option>";
+  Object.keys(agents).sort().forEach(function(a){
+    sel.innerHTML += "<option value=\""+esc(a)+"\">"+(a===current?"selected":"")+esc(a)+"</option>";
+  });
+  if(current) sel.value = current;
+}
+ 
+function renderLibList() {
+  var list = document.getElementById("libCallList");
+  if(!libCalls.length) {
+    list.innerHTML = "<div class=\"empty-st\"><div>No results found</div></div>";
+    return;
+  }
+  list.innerHTML = libCalls.map(function(c) {
+    var sel = libSelected.has(c.call_id);
+    var d = new Date(c.started_at);
+    var ds = d.toLocaleDateString("en-US",{month:"short",day:"numeric"});
+    var ts = d.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"});
+    var hasT = c.transcript && c.transcript.length;
+    return "<div class=\"call-item"+(sel?" sel":"")+"' data-libid=\""+esc(c.call_id)+"\">" +
+      "<div class=\"chk\"></div>" +
+      "<div style=\"flex:1;min-width:0\">" +
+        "<div class=\"cname\">"+esc(c.contact_name||"Unknown")+"</div>" +
+        "<div class=\"cmeta\">" +
+          "<span class=\"cdate\">"+ds+" "+ts+"</span>" +
+          "<span class=\"cdur\">"+dur(c.duration_seconds||0)+"</span>" +
+          "<span class=\"tag "+(c.direction==="inbound"?"tag-in":"tag-out")+"\">"+c.direction+"</span>" +
+          "<span class=\"tag\" style=\"background:rgba(100,120,255,.1);color:#8899ff\">"+esc(c.agent_name||"?")+"</span>" +
+          (hasT?"<span class=\"tag tag-yes\">transcript</span>":"") +
+        "</div>" +
+      "</div></div>";
+  }).join("");
+}
+ 
+// Override fetchCalls to auto-save to Supabase after fetching
+var _origFetchCalls = fetchCalls;
+async function fetchCalls() {
+  await _origFetchCalls();
+  if(calls.length) {
+    await saveCallsToSupabase(calls);
+  }
+}
+ 
+// Override analyze to auto-save analysis to Supabase
+var _origAnalyzeSupabase = analyze;
+async function analyze() {
+  var prompt = document.getElementById("promptInput").value.trim();
+  var sel = calls.filter(function(c){return selected.has(c.id);});
+  var hsWithNotes = hsCalls.filter(function(c){return hsSelected.has(c.id)&&c.transcript;});
+  var allSel = [].concat(sel, hsWithNotes);
+  await _origAnalyzeSupabase();
+  // Save result after a short delay to let DOM update
+  setTimeout(async function() {
+    var resultEl = document.querySelector(".result .result-body");
+    if(resultEl && prompt) {
+      var callIds = allSel.map(function(c){return c.id;});
+      await saveAnalysisToSupabase(prompt, resultEl.textContent, callIds);
+    }
+  }, 1000);
+}
+ 
+// ─── LIBRARY EVENT LISTENERS ──────────────────────────────────────────────────
+document.getElementById("libSearchBtn").addEventListener("click", searchLibrary);
+document.getElementById("libSearch").addEventListener("keydown", function(e){ if(e.key==="Enter") searchLibrary(); });
+document.getElementById("libSelAll").addEventListener("click", function(){ libCalls.forEach(function(c){libSelected.add(c.call_id);}); renderLibList(); });
+document.getElementById("libSelNone").addEventListener("click", function(){ libSelected.clear(); renderLibList(); });
+ 
+document.getElementById("libCallList").addEventListener("click", function(e){
+  var item = e.target.closest(".call-item");
+  if(item && item.dataset.libid) {
+    var id = item.dataset.libid;
+    if(libSelected.has(id)) libSelected.delete(id); else libSelected.add(id);
+    renderLibList();
+  }
+});
+ 
+document.getElementById("libCallList").addEventListener("dblclick", function(e){
+  var item = e.target.closest(".call-item");
+  if(item && item.dataset.libid) {
+    var id = item.dataset.libid;
+    var c = libCalls.find(function(x){return x.call_id===id;});
+    if(c) {
+      // Open transcript modal with library call
+      var fakeCall = {
+        id: c.call_id,
+        started_at: new Date(c.started_at).getTime()/1000,
+        duration: c.duration_seconds,
+        direction: c.direction,
+        contact: { name: c.contact_name },
+        user: { name: c.agent_name },
+        transcript: c.transcript
+      };
+      openTranscriptModal(fakeCall);
+    }
+  }
+});
+ 
+// Update switchTab to load library agents on first visit
+var _libLoaded = false;
+var _origSwitchTab = switchTab;
+function switchTab(tab) {
+  _origSwitchTab(tab);
+  if(tab === "library" && !_libLoaded) {
+    _libLoaded = true;
+    searchLibrary();
+  }
+  // Update panel display for library
+  var libPanel = document.getElementById("libraryPanel");
+  if(libPanel) libPanel.style.display = tab === "library" ? "flex" : "none";
+  // Update tab active state
+  var libTab = document.getElementById("tabLibrary");
+  if(libTab) libTab.className = "tab-btn" + (tab === "library" ? " active" : "");
+}
  
 loadCfg();
 if(!cfg.aircallId) setTimeout(openModal, 500);
