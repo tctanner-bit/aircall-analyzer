@@ -234,7 +234,7 @@ textarea { font-family: var(--sans); font-size: 13px; resize: none; line-height:
     <!-- AIRCALL PANEL -->
     <div id="aircallPanel" style="display:flex;flex-direction:column;flex:1;overflow:hidden;min-height:0">
       <div class="sec">
-        <div class="sec-label">Fetch Calls</div>
+        <div class="sec-label">Load from Library</div>
         <div class="ig"><label>Date Range</label>
           <select id="dateRangePreset" onchange="handlePresetChange()">
             <option value="1">Last 24 hours</option>
@@ -275,7 +275,7 @@ textarea { font-family: var(--sans); font-size: 13px; resize: none; line-height:
         <div class="ig"><label>Agent</label>
           <select id="agentFilter"><option value="all">All agents</option></select>
         </div>
-        <button class="btn btn-primary" id="fetchBtn"><span id="fetchTxt">Fetch Calls</span></button>
+        <button class="btn btn-primary" id="fetchBtn"><span id="fetchTxt">Load Calls</span></button>
       </div>
       <div class="sec" style="padding:10px 16px">
         <div class="sec-label" style="margin-bottom:6px">Lookup by Call ID</div>
@@ -557,53 +557,56 @@ function extractTranscript(td) {
  
 async function fetchCalls() {
   var btn=document.getElementById("fetchBtn"), txt=document.getElementById("fetchTxt");
-  btn.disabled=true; txt.innerHTML="<span class='spinner spinner-dark'></span> Fetching...";
+  btn.disabled=true; txt.innerHTML="<span class='spinner spinner-dark'></span> Loading...";
+ 
   var preset=document.getElementById("dateRangePreset").value;
-  var from,to;
+  var fromTs, toTs;
   if(preset==="custom") {
     var fv=calState.from.selected, tv=calState.to.selected;
     if(!fv||!tv){ showToast("Select From and To dates","error"); btn.disabled=false; txt.innerHTML="Fetch Calls"; return; }
-    from=Math.floor(new Date(fv).getTime()/1000);
-    var tp=tv.split("-"); to=Math.floor(new Date(parseInt(tp[0]),parseInt(tp[1])-1,parseInt(tp[2]),23,59,59).getTime()/1000);
+    fromTs=new Date(fv).toISOString();
+    var tp=tv.split("-");
+    toTs=new Date(parseInt(tp[0]),parseInt(tp[1])-1,parseInt(tp[2]),23,59,59).toISOString();
   } else {
     var days=parseInt(preset);
-    from=Math.floor((Date.now()-days*86400000)/1000);
-    to=Math.floor(Date.now()/1000);
+    fromTs=new Date(Date.now()-days*86400000).toISOString();
+    toTs=new Date().toISOString();
   }
+ 
   var filter=document.getElementById("filterType").value;
+  var agentId=document.getElementById("agentFilter").value;
+ 
   try {
-    var allCalls=[],page=1,hasMore=true;
-    while(hasMore&&allCalls.length<2000) {
-      txt.innerHTML="<span class='spinner spinner-dark'></span> Fetching... "+allCalls.length;
-      var r=await aircallFetch("calls?from="+from+(to?"&to="+to:"")+"&per_page=50&page="+page+"&order=DESC");
-      if(!r.ok){ var e=await r.json().catch(function(){return{};}); throw new Error(e.message||"Aircall error "+r.status); }
-      var d=await r.json(); var pg=d.calls||[];
-      allCalls=allCalls.concat(pg);
-      if(pg.length<50) hasMore=false; else page++;
-      if(hasMore) await new Promise(function(r){setTimeout(r,200);});
-    }
-    if(filter==="inbound") allCalls=allCalls.filter(function(c){return c.direction==="inbound";});
-    else if(filter==="outbound") allCalls=allCalls.filter(function(c){return c.direction==="outbound";});
-    document.getElementById("callCount").textContent=allCalls.length+" calls loaded \u00b7 fetching transcripts...";
-    lastDebug=null;
-    for(var i=0;i<allCalls.length;i++) {
-      var pct=Math.round(i/allCalls.length*100);
-      txt.innerHTML="<span class='spinner spinner-dark'></span> Transcripts "+pct+"%";
-      var call=allCalls[i];
-      try {
-        var tr=await aircallFetch("calls/"+call.id+"/transcription");
-        var td=await tr.json();
-        if(!lastDebug) lastDebug={callId:call.id,status:tr.status,body:td};
-        if(!tr.ok){ call._err="HTTP "+tr.status+": "+(td.message||td.error||JSON.stringify(td)); }
-        else { var t=extractTranscript(td); if(t) call.transcript=t; else call._raw=JSON.stringify(td); }
-      } catch(ex){ call._err=ex.message; }
-      await new Promise(function(r){setTimeout(r,1100);});
-    }
-    if(filter==="transcript") allCalls=allCalls.filter(function(c){return c.transcript;});
-    calls=allCalls; selected.clear(); updateBadge(); renderList();
+    // Build Supabase query
+    var filters=["started_at=gte."+fromTs, "started_at=lte."+toTs];
+    if(filter==="transcript") filters.push("transcript=not.is.null");
+    if(filter==="inbound") filters.push("direction=eq.inbound");
+    if(filter==="outbound") filters.push("direction=eq.outbound");
+    if(agentId && agentId!=="all") filters.push("agent_name=eq."+encodeURIComponent(agentId));
+ 
+    var path="calls?"+filters.join("&")+"&order=started_at.desc&limit=2000";
+    var r=await sbFetch(path);
+    if(!r.ok){ var e=await r.json().catch(function(){return{};}); throw new Error(e.message||"Error loading calls"); }
+    var data=await r.json();
+ 
+    // Normalize Supabase rows to match the call object shape the rest of the app expects
+    calls=data.map(function(row){
+      return {
+        id: row.call_id,
+        started_at: Math.floor(new Date(row.started_at).getTime()/1000),
+        duration: row.duration_seconds||0,
+        direction: row.direction||"unknown",
+        contact: { name: row.contact_name||"Unknown" },
+        user: { name: row.agent_name||"Unknown", id: row.agent_name },
+        transcript: row.transcript||"",
+        _source: row.source||"aircall"
+      };
+    });
+ 
+    selected.clear(); updateBadge(); renderList();
     var wt=calls.filter(function(c){return c.transcript;}).length;
     showToast("Loaded "+calls.length+" calls, "+wt+" with transcripts","success");
-    if(calls.length) saveCallsToSupabase(calls);
+ 
   } catch(ex){ showToast("Error: "+ex.message,"error"); console.error(ex); }
   finally{ btn.disabled=false; txt.innerHTML="Fetch Calls"; }
 }
@@ -613,16 +616,16 @@ function updateBadge(){ document.getElementById("selBadge").textContent=(selecte
 function populateAgentFilter() {
   var sel=document.getElementById("agentFilter"); var current=sel.value;
   var agents={};
-  calls.forEach(function(c){ if(c.user&&c.user.name) agents[c.user.id]=c.user.name; });
+  calls.forEach(function(c){ if(c.user&&c.user.name) agents[c.user.name]=1; });
   var opts="<option value='all'>All agents</option>";
-  Object.keys(agents).sort(function(a,b){return agents[a].localeCompare(agents[b]);}).forEach(function(id){ opts+="<option value='"+id+"'"+(current===id?" selected":"")+">"+esc(agents[id])+"</option>"; });
+  Object.keys(agents).sort().forEach(function(name){ opts+="<option value='"+esc(name)+"'"+(current===name?" selected":"")+">"+esc(name)+"</option>"; });
   sel.innerHTML=opts;
 }
  
 function getFilteredCalls() {
-  var agentId=document.getElementById("agentFilter").value;
-  if(agentId==="all") return calls;
-  return calls.filter(function(c){ return c.user&&String(c.user.id)===agentId; });
+  var agentName=document.getElementById("agentFilter").value;
+  if(agentName==="all") return calls;
+  return calls.filter(function(c){ return c.user&&c.user.name===agentName; });
 }
  
 function renderList() {
