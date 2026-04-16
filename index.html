@@ -653,14 +653,13 @@ function viewSelected() {
 }
  
 function openTranscriptModal(call) {
-  var hasT=call.transcript&&call.transcript.length;
   var d=new Date(call.started_at*1000).toLocaleString();
   var name=(call.contact&&call.contact.name)||call.raw_digits||"Unknown";
   var agent=(call.user&&call.user.name)||"Unknown Agent";
-  document.getElementById("tModalTitle").textContent=name+" \u2192 "+agent+" \u00b7 "+d;
+  document.getElementById("tModalTitle").textContent=name+" → "+agent+" · "+d;
   document.getElementById("transcriptModal").dataset.callId=call.id;
   var body=document.getElementById("tModalBody");
-  if(hasT) {
+  if(call.transcript&&call.transcript.length) {
     body.innerHTML=call.transcript.split("\n").map(function(line){
       var m=line.match(/^([^:]+):\s*(.*)/);
       return m?"<span class='speaker-name'>"+esc(m[1])+"</span>"+esc(m[2])+"\n":esc(line)+"\n";
@@ -781,11 +780,23 @@ function renderHsCallList() {
 }
  
 // ── SUPABASE ───────────────────────────────────────────────────────────────────
+var SUPABASE_URL = "https://opqzijxtwjyitdvhcbxj.supabase.co/rest/v1";
+var SUPABASE_KEY = "sb_publishable_btArcE3k7Dmuwcrkt6PgiQ_SHgt2xPh";
+ 
 async function sbFetch(path, method, body) {
-  method=method||"GET";
-  var headers={"Content-Type":"application/json","x-supabase-path":path,"x-supabase-method":method};
-  if(body) headers["x-supabase-body"]=JSON.stringify(body);
-  var r=await fetch("/api/supabase",{method:"POST",headers:headers});
+  method = method || "GET";
+  var headers = {
+    "Content-Type": "application/json",
+    "apikey": SUPABASE_KEY,
+    "Authorization": "Bearer " + SUPABASE_KEY
+  };
+  if(method === "POST") headers["Prefer"] = "resolution=merge-duplicates,return=minimal";
+  if(method === "PATCH") headers["Prefer"] = "return=minimal";
+  var r = await fetch(SUPABASE_URL + "/" + path, {
+    method: method,
+    headers: headers,
+    body: body ? JSON.stringify(body) : undefined
+  });
   return r;
 }
  
