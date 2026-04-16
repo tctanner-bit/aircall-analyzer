@@ -402,14 +402,15 @@ textarea { font-family: var(--sans); font-size: 13px; resize: none; line-height:
 <div class="toast" id="toast"></div>
  
 <script>
- 
- 
 var calls = [], selected = new Set(), cfg = {}, lastDebug = null;
+var hsCalls = [], hsSelected = new Set();
+var libCalls = [], libSelected = new Set();
+var _libLoaded = false;
+var PROXY = "https://corsproxy.io/";
 var calState = {
   from: { year: new Date().getFullYear(), month: new Date().getMonth(), selected: null },
   to:   { year: new Date().getFullYear(), month: new Date().getMonth(), selected: null }
 };
-var PROXY = "https://corsproxy.io/?url=";
  
 var PRESETS = {
   trends: "Analyze these support call transcripts and identify the top recurring themes and trends. What are customers calling about most often? Group similar issues and rank by frequency.",
@@ -420,33 +421,45 @@ var PRESETS = {
   coaching: "Identify coaching opportunities for support agents. Where could agents improve? What best practices are being followed well?"
 };
  
-function esc(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
-function dur(s) { if(!s) return "0:00"; return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); }
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function dur(s){ if(!s) return "0:00"; return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); }
  
 function showToast(msg, type) {
   var t = document.getElementById("toast");
   t.textContent = msg;
   t.className = "toast " + (type==="success"?"ok":"err") + " show";
   clearTimeout(t._timer);
-  t._timer = setTimeout(function() { t.className = "toast"; }, 3500);
+  t._timer = setTimeout(function(){ t.className = "toast"; }, 3500);
 }
  
 function loadCfg() {
-  try { cfg = JSON.parse(localStorage.getItem("act_cfg")||"{}"); } catch(e) { cfg = {}; }
+  try { cfg = JSON.parse(localStorage.getItem("act_cfg")||"{}"); } catch(e){ cfg={}; }
   if(cfg.aircallId) document.getElementById("cfgId").value = cfg.aircallId;
   if(cfg.aircallToken) document.getElementById("cfgToken").value = cfg.aircallToken;
   if(cfg.anthropicKey) document.getElementById("cfgKey").value = cfg.anthropicKey;
   updateStatus();
-  console.log("Loaded cfg - aircallId present:", !!cfg.aircallId, "token present:", !!cfg.aircallToken);
+  console.log("Loaded cfg - aircallId:", !!cfg.aircallId, "token:", !!cfg.aircallToken);
+}
+ 
+function saveCfg() {
+  cfg = {
+    aircallId: document.getElementById("cfgId").value.trim(),
+    aircallToken: document.getElementById("cfgToken").value.trim(),
+    anthropicKey: document.getElementById("cfgKey").value.trim()
+  };
+  try { localStorage.setItem("act_cfg", JSON.stringify(cfg)); } catch(e){}
+  updateStatus();
+  closeModal();
+  showToast("Configuration saved","success");
 }
  
 function updateStatus() {
   var el = document.getElementById("hdrStatus");
   if(!el) return;
   if(cfg.aircallId && cfg.aircallToken && cfg.anthropicKey) {
-    el.innerHTML = "<span style='color:var(--accent)'>configured</span>";
+    el.innerHTML = "<span style='color:#2d7a3a;font-weight:600'>configured</span>";
   } else if(cfg.aircallId && cfg.aircallToken) {
-    el.innerHTML = "<span style='color:var(--yellow)'>aircall only</span>";
+    el.innerHTML = "<span style='color:#9a6700'>aircall only</span>";
   } else {
     el.textContent = "not configured";
   }
@@ -455,502 +468,25 @@ function updateStatus() {
 function openModal() { document.getElementById("cfgModal").classList.add("open"); }
 function closeModal() { document.getElementById("cfgModal").classList.remove("open"); }
  
-function saveCfg() {
-  cfg = {
-    aircallId: document.getElementById("cfgId").value.trim(),
-    aircallToken: document.getElementById("cfgToken").value.trim(),
-    anthropicKey: document.getElementById("cfgKey").value.trim()
-  };
-  try { localStorage.setItem("act_cfg", JSON.stringify(cfg)); } catch(e) {}
-  updateStatus();
-  closeModal();
-  showToast("Configuration saved", "success");
-}
- 
-async function aircallFetch(path) {
-  if(!cfg.aircallId || !cfg.aircallToken) {
-    showToast("API credentials missing - please Configure","error");
-    openModal();
-    throw new Error("Missing credentials");
-  }
-  var creds = btoa(cfg.aircallId+":"+cfg.aircallToken);
-  var r = await fetch("/api/aircall?path="+encodeURIComponent(path), {
-    headers: { "x-aircall-auth": creds }
-  });
-  return r;
-}
- 
-function extractTranscript(td) {
-  if(!td) return "";
-  // Aircall format: transcription.content.utterances[]
-  if(td.transcription && td.transcription.content && td.transcription.content.utterances) {
-    var utterances = td.transcription.content.utterances;
-    if(utterances.length) {
-      return utterances.map(function(u) {
-        var speaker = u.participant_type === "internal" ? "Agent" : "Customer";
-        return speaker+": "+u.text;
-      }).join("\n");
-    }
-  }
-  // Fallbacks for other possible shapes
-  if(td.transcription && td.transcription.sentences && td.transcription.sentences.length) {
-    return td.transcription.sentences.map(function(s){ return (s.speaker||s.participant_type||"Speaker")+": "+s.text; }).join("\n");
-  }
-  if(td.transcript) return td.transcript;
-  return "";
-}
- 
-async function fetchCalls() {
-  if(!cfg.aircallId || !cfg.aircallToken) { showToast("Configure Aircall credentials first","error"); openModal(); return; }
-  var btn = document.getElementById("fetchBtn");
-  btn.disabled = true;
-  btn.innerHTML = "<span class='spinner'></span> Fetching...";
-  var preset = document.getElementById("dateRangePreset").value;
-  var from, to;
-  if(preset === "custom") {
-    var fromVal = calState.from.selected;
-    var toVal = calState.to.selected;
-    if(!fromVal || !toVal) { showToast("Please select both From and To dates","error"); btn.disabled=false; btn.innerHTML="Fetch Calls"; return; }
-    from = Math.floor(new Date(fromVal).getTime()/1000);
-    var toParts = toVal.split("-");
-    var toDate = new Date(parseInt(toParts[0]),parseInt(toParts[1])-1,parseInt(toParts[2]),23,59,59);
-    to = Math.floor(toDate.getTime()/1000);
-  } else {
-    var days = parseInt(preset);
-    from = Math.floor((Date.now()-days*86400000)/1000);
-    to = Math.floor(Date.now()/1000);
-  }
-  var filter = document.getElementById("filterType").value;
-  try {
-    var allCalls = [], page = 1, hasMore = true;
-    while(hasMore && allCalls.length < 2000) {
-      btn.innerHTML = "<span class='spinner'></span> Fetching calls... "+allCalls.length;
-      var r = await aircallFetch("calls?from="+from+(to?"&to="+to:"")+"&per_page=50&page="+page+"&order=DESC");
-      if(!r.ok) { var e = await r.json().catch(function(){return{};}); throw new Error(e.message||"Aircall error "+r.status); }
-      var d = await r.json();
-      var pg = d.calls || [];
-      allCalls = allCalls.concat(pg);
-      if(pg.length < 50) hasMore = false; else page++;
-      // Respect rate limit - pause between pages
-      if(hasMore) await new Promise(function(r){setTimeout(r,200);});
-    }
-    if(filter==="inbound") allCalls = allCalls.filter(function(c){return c.direction==="inbound";});
-    else if(filter==="outbound") allCalls = allCalls.filter(function(c){return c.direction==="outbound";});
-    lastDebug = null;
-    // Show call count before transcript fetching begins
-    document.getElementById("callCount").textContent = allCalls.length+" calls loaded · fetching transcripts...";
-    var BATCH = 3;
-    for(var i = 0; i < allCalls.length; i += BATCH) {
-      var pct = Math.round(i/allCalls.length*100);
-      btn.innerHTML = "<span class='spinner'></span> Transcripts "+pct+"%";
-      var batch = allCalls.slice(i, i+BATCH);
-      for(var j = 0; j < batch.length; j++) {
-        var call = batch[j];
-        try {
-          var tr = await aircallFetch("calls/"+call.id+"/transcription");
-          var td = await tr.json();
-          if(!lastDebug) lastDebug = {callId:call.id, status:tr.status, body:td};
-          if(!tr.ok) { call._err = "HTTP "+tr.status+": "+(td.message||td.error||JSON.stringify(td)); }
-          else {
-            var t = extractTranscript(td);
-            if(t) call.transcript = t; else call._raw = JSON.stringify(td);
-          }
-        } catch(ex) { call._err = ex.message; }
-        await new Promise(function(r){setTimeout(r,1100);});
-      }
-    }
-    if(filter==="transcript") allCalls = allCalls.filter(function(c){return c.transcript;});
-    calls = allCalls; selected.clear(); updateBadge(); renderList();
-    var wt = calls.filter(function(c){return c.transcript;}).length;
-    showToast("Loaded "+calls.length+" calls, "+wt+" with transcripts","success");
-  } catch(ex) { showToast("Error: "+ex.message,"error"); console.error(ex); }
-  finally { btn.disabled = false; btn.innerHTML = "Fetch Calls"; }
-}
- 
-async function lookupCall() {
-  var callId = document.getElementById("callIdInput").value.trim();
-  if(!callId) { showToast("Enter a call ID","error"); return; }
-  if(!cfg.aircallId || !cfg.aircallToken) { showToast("Configure Aircall credentials first","error"); openModal(); return; }
-  var btn = document.getElementById("lookupBtn");
-  btn.disabled = true;
-  btn.innerHTML = "<span class='spinner'></span> Looking up...";
-  try {
-    // Fetch call details
-    var r = await aircallFetch("calls/"+callId);
-    if(!r.ok) { var e = await r.json().catch(function(){return{};}); throw new Error(e.message||"Call not found: "+r.status); }
-    var d = await r.json();
-    var call = d.call;
-    if(!call) throw new Error("Call not found");
-    // Fetch transcript
-    var tr = await aircallFetch("calls/"+callId+"/transcription");
-    var td = await tr.json();
-    if(!lastDebug) lastDebug = {callId:callId, status:tr.status, body:td};
-    if(tr.ok) {
-      var t = extractTranscript(td);
-      if(t) call.transcript = t; else call._raw = JSON.stringify(td);
-    } else {
-      call._err = "HTTP "+tr.status+": "+(td.message||td.error||JSON.stringify(td));
-    }
-    // Add to calls list if not already there
-    var exists = calls.find(function(c){return c.id===call.id;});
-    if(!exists) {
-      calls.unshift(call);
-    } else {
-      calls[calls.indexOf(exists)] = call;
-    }
-    selected.clear();
-    selected.add(call.id);
-    updateBadge();
-    renderList();
-    showToast("Call "+callId+" loaded"+(call.transcript?" with transcript":"" ),"success");
-  } catch(ex) { showToast("Error: "+ex.message,"error"); console.error(ex); }
-  finally { btn.disabled=false; btn.innerHTML="Lookup Call"; }
-}
- 
-function updateBadge() { document.getElementById("selBadge").textContent = selected.size+" selected"; }
- 
-function populateAgentFilter() {
-  var select = document.getElementById("agentFilter");
-  var current = select.value;
-  var agents = {};
-  calls.forEach(function(c) {
-    if(c.user && c.user.name) agents[c.user.id] = c.user.name;
-  });
-  var options = '<option value="all">All agents</option>';
-  Object.keys(agents).sort(function(a,b){ return agents[a].localeCompare(agents[b]); }).forEach(function(id) {
-    var sel = current === id ? " selected" : "";
-    options += "<option value='"+id+"'"+sel+">"+esc(agents[id])+"</option>";
-  });
-  select.innerHTML = options;
-}
- 
-function getFilteredCalls() {
-  var agentId = document.getElementById("agentFilter").value;
-  if(agentId === "all") return calls;
-  return calls.filter(function(c){ return c.user && String(c.user.id) === agentId; });
-}
- 
-function renderList() {
-  var list = document.getElementById("callList");
-  var count = document.getElementById("callCount");
-  if(!calls.length) { count.textContent="No calls found"; list.innerHTML="<div class='empty-st'><div style='font-size:11px'>No calls found. Try a wider date range.</div></div>"; return; }
-  populateAgentFilter();
-  var filtered = getFilteredCalls();
-  var wt = filtered.filter(function(c){return c.transcript;}).length;
-  count.textContent = filtered.length+" calls · "+wt+" transcripts";
-  list.innerHTML = filtered.map(function(c) {
-    var hasT = c.transcript && c.transcript.length;
-    var d = new Date(c.started_at*1000);
-    var ds = d.toLocaleDateString("en-US",{month:"short",day:"numeric"});
-    var ts = d.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"});
-    var name = (c.contact&&c.contact.name)||c.raw_digits||"Unknown";
-    var sel = selected.has(c.id);
-    return "<div class='call-item"+(sel?" sel":"")+"' data-id='"+c.id+"'><div class='chk'></div><div style='flex:1;min-width:0'><div class='cname'>"+esc(name)+"</div><div class='cmeta'><span class='cdate'>"+ds+" "+ts+"</span><span class='cdur'>"+dur(c.duration)+"</span><span class='tag "+(c.direction==="inbound"?"tag-in":"tag-out")+"'>"+c.direction+"</span>"+(hasT?"<span class='tag tag-yes'>transcript</span>":"<span class='tag tag-no'>no transcript</span>")+"</div></div></div>";
-  }).join("");
-}
- 
-function viewSelected() {
-  var sel = calls.filter(function(c){return selected.has(c.id);});
-  if(!sel.length) { showToast("Select at least one call","error"); return; }
-  openTranscriptModal(sel[0]);
-}
- 
-function dlTranscript(call) {
-  var d = new Date(call.started_at*1000);
-  var ds = d.toISOString().split("T")[0];
-  var name = ((call.contact&&call.contact.name)||call.raw_digits||"unknown").replace(/[^a-z0-9]/gi,"_");
-  var agent = ((call.user&&call.user.name)||"unknown").replace(/[^a-z0-9]/gi,"_");
-  var txt = ["CALL TRANSCRIPT","===============","Date: "+d.toLocaleString(),"Contact: "+((call.contact&&call.contact.name)||call.raw_digits||"Unknown"),"Agent: "+((call.user&&call.user.name)||"Unknown"),"Direction: "+call.direction,"Duration: "+dur(call.duration),"Call ID: "+call.id,"","TRANSCRIPT","----------",call.transcript||"(no transcript)"].join("\n");
-  var blob = new Blob([txt],{type:"text/plain"});
-  var url = URL.createObjectURL(blob);
-  var a = document.createElement("a");
-  a.href=url; a.download="transcript_"+ds+"_"+name+"_"+agent+".txt";
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
- 
-function saveSelected() {
-  var sel = calls.filter(function(c){return selected.has(c.id)&&c.transcript;});
-  if(!sel.length) { showToast("No calls with transcripts selected","error"); return; }
-  sel.forEach(dlTranscript);
-  showToast("Saved "+sel.length+" file"+(sel.length>1?"s":""),"success");
-}
- 
-function showDebug() {
-  var area = document.getElementById("tArea");
-  var wt = calls.filter(function(c){return c.transcript;}).length;
-  var errs = calls.filter(function(c){return c._err;}).slice(0,5).map(function(c){return "Call "+c.id+": "+c._err;}).join("\n");
-  var raws = calls.filter(function(c){return c._raw;}).slice(0,2).map(function(c){return "Call "+c.id+": "+c._raw;}).join("\n\n");
-  var dbg = "Calls: "+calls.length+"\nWith transcripts: "+wt+"\nErrors: "+calls.filter(function(c){return c._err;}).length+"\nUnknown shape: "+calls.filter(function(c){return c._raw;}).length+"\n\n";
-  if(lastDebug) dbg += "--- FIRST TRANSCRIPT API RESPONSE ---\nCall ID: "+lastDebug.callId+"\nHTTP Status: "+lastDebug.status+"\nBody:\n"+JSON.stringify(lastDebug.body,null,2);
-  else dbg += "No transcript API response yet. Fetch calls first.";
-  if(errs) dbg += "\n\n--- ERRORS ---\n"+errs;
-  if(raws) dbg += "\n\n--- UNKNOWN SHAPES ---\n"+raws;
-  area.innerHTML = "<div class='dbg'><div class='dbg-hdr'>Debug Info</div><div class='dbg-body'>"+esc(dbg)+"</div></div>";
-}
- 
-async function analyze() {
-  if(!cfg.anthropicKey) { showToast("Configure Anthropic API key first","error"); openModal(); return; }
-  var prompt = document.getElementById("promptInput").value.trim();
-  if(!prompt) { showToast("Enter a prompt","error"); return; }
-  var sel = calls.filter(function(c){return selected.has(c.id);});
-  if(!sel.length) { showToast("Select at least one call","error"); return; }
-  var withT = sel.filter(function(c){return c.transcript;});
-  if(!withT.length) { showToast("None of the selected calls have transcripts","error"); return; }
-  var btn = document.getElementById("analyzeBtn");
-  btn.disabled = true; btn.innerHTML = "<span class='spinner spinner-w'></span>";
-  var block = withT.map(function(c,i){
-    var d = new Date(c.started_at*1000).toLocaleString();
-    var name = (c.contact&&c.contact.name)||c.raw_digits||"Unknown";
-    var agent = (c.user&&c.user.name)||"Unknown";
-    return "--- CALL "+(i+1)+" ---\nDate: "+d+"\nContact: "+name+"\nAgent: "+agent+"\nDuration: "+dur(c.duration)+"\n\n"+c.transcript;
-  }).join("\n\n");
-  var full = prompt+"\n\n===== TRANSCRIPTS ("+withT.length+" calls) =====\n\n"+block;
-  var area = document.getElementById("tArea");
-  var loader = document.createElement("div");
-  loader.id = "loader"; loader.className = "result";
-  loader.innerHTML = "<div class='result-hdr'><span class='result-title'>Analyzing "+withT.length+" transcript"+(withT.length>1?"s":"")+"...</span></div>";
-  area.insertBefore(loader,area.firstChild); area.scrollTop = 0;
-  try {
-    var res = await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":cfg.anthropicKey,"anthropic-version":"2023-06-01"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,messages:[{role:"user",content:full}]})});
-    if(!res.ok) { var e = await res.json().catch(function(){return{};}); throw new Error((e.error&&e.error.message)||"API error "+res.status); }
-    var data = await res.json();
-    var result = (data.content&&data.content[0]&&data.content[0].text)||"No response";
-    var l = document.getElementById("loader"); if(l) l.remove();
-    var rd = document.createElement("div"); rd.className = "result";
-    rd.innerHTML = "<div class='result-hdr'><span class='result-title'>Analysis &middot; "+withT.length+" call"+(withT.length>1?"s":"")+" &middot; "+new Date().toLocaleTimeString()+"</span><button class='mini-btn' data-save-analysis>Save</button></div><div class='result-body'>"+esc(result)+"</div>";
-    area.insertBefore(rd,area.firstChild); area.scrollTop = 0;
-    showToast("Analysis complete","success");
-  } catch(ex) { var l = document.getElementById("loader"); if(l) l.remove(); showToast("Error: "+ex.message,"error"); }
-  finally { btn.disabled=false; btn.innerHTML="Analyze"; }
-}
- 
-document.getElementById("cfgBtn").addEventListener("click", openModal);
-document.getElementById("mClose").addEventListener("click", closeModal);
-document.getElementById("mCancel").addEventListener("click", closeModal);
-document.getElementById("mSave").addEventListener("click", saveCfg);
-document.getElementById("fetchBtn").addEventListener("click", fetchCalls);
-document.getElementById("saveAllBtn").addEventListener("click", saveAllAsOne);
-document.getElementById("hsFetchBtn").addEventListener("click", fetchHubSpotCalls);
-document.getElementById("hsSelAll").addEventListener("click", function(){ hsCalls.forEach(function(c){hsSelected.add(c.id);}); renderHsCallList(); });
-document.getElementById("hsSelNone").addEventListener("click", function(){ hsSelected.clear(); renderHsCallList(); });
-document.getElementById("agentFilter").addEventListener("change", renderList);
-document.getElementById("lookupBtn").addEventListener("click", lookupCall);
-document.getElementById("selAll").addEventListener("click", function(){calls.forEach(function(c){selected.add(c.id);});updateBadge();renderList();});
-document.getElementById("selNone").addEventListener("click", function(){selected.clear();updateBadge();renderList();});
-document.getElementById("viewBtn").addEventListener("click", viewSelected);
-document.getElementById("saveBtn").addEventListener("click", saveSelected);
-document.getElementById("dbgBtn").addEventListener("click", showDebug);
-document.getElementById("clearBtn").addEventListener("click", function(){document.getElementById("tArea").innerHTML="<div class='welcome'><div style='font-family:var(--mono);font-size:48px;font-weight:600;color:var(--border2)'>AI</div></div>";});
-document.getElementById("analyzeBtn").addEventListener("click", analyze);
- 
-document.getElementById("hsCallList").addEventListener("click", function(e){
-  var item = e.target.closest(".call-item");
-  if(item && item.dataset.hsid) {
-    var id = item.dataset.hsid;
-    if(hsSelected.has(id)) hsSelected.delete(id); else hsSelected.add(id);
-    renderHsCallList();
-    // Update badge to show combined count
-    document.getElementById("selBadge").textContent = (selected.size + hsSelected.size) + " selected";
-  }
-});
- 
-document.getElementById("callList").addEventListener("click", function(e){
-  var item = e.target.closest(".call-item");
-  if(item) { var id = parseInt(item.dataset.id); if(selected.has(id)) selected.delete(id); else selected.add(id); updateBadge(); renderList(); }
-});
- 
-document.getElementById("tArea").addEventListener("click", function(e){
-  var s = e.target.closest("[data-save]"); if(s) { var id = parseInt(s.dataset.save); var c = calls.find(function(x){return x.id===id;}); if(c) dlTranscript(c); }
-  var sa = e.target.closest("[data-save-analysis]"); if(sa) { var txt = sa.closest(".result").querySelector(".result-body").textContent; var blob = new Blob([txt],{type:"text/plain"}); var url = URL.createObjectURL(blob); var a = document.createElement("a"); a.href=url; a.download="analysis_"+new Date().toISOString().split("T")[0]+".txt"; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); showToast("Saved","success"); }
-});
- 
-document.querySelectorAll(".preset").forEach(function(btn){
-  btn.addEventListener("click", function(){ document.getElementById("promptInput").value = PRESETS[btn.dataset.p]; });
-});
- 
-document.getElementById("modal").addEventListener("click", function(e){ if(e.target===this) closeModal(); });
- 
-// ─── TAB SWITCHING ────────────────────────────────────────────────────────────
+// ── TAB SWITCHING ──────────────────────────────────────────────────────────────
 function switchTab(tab) {
-  var isAircall = tab === "aircall";
-  document.getElementById("aircallPanel").style.display = isAircall ? "" : "none";
-  document.getElementById("aircallListPanel").style.display = isAircall ? "" : "none";
-  document.getElementById("hubspotPanel").style.display = isAircall ? "none" : "";
-  document.getElementById("tabAircall").className = "tab-btn" + (isAircall ? " active" : "");
-  document.getElementById("tabHubspot").className = "tab-btn" + (!isAircall ? " active" : "");
-}
- 
-// ─── SAVE ALL AS ONE FILE ─────────────────────────────────────────────────────
-function saveAllAsOne() {
-  var sel = calls.filter(function(c){ return selected.has(c.id) && c.transcript; });
-  if(!sel.length) { showToast("No calls with transcripts selected","error"); return; }
-  var lines = ["COMBINED CALL TRANSCRIPTS","========================","Generated: "+new Date().toLocaleString(),"Total calls: "+sel.length,"",""];
-  sel.forEach(function(c, i) {
-    var d = new Date(c.started_at*1000).toLocaleString();
-    var name = (c.contact&&c.contact.name)||c.raw_digits||"Unknown";
-    var agent = (c.user&&c.user.name)||"Unknown";
-    lines.push("═══════════════════════════════════════");
-    lines.push("CALL "+(i+1)+" OF "+sel.length);
-    lines.push("Date: "+d);
-    lines.push("Contact: "+name);
-    lines.push("Agent: "+agent);
-    lines.push("Direction: "+c.direction);
-    lines.push("Duration: "+dur(c.duration));
-    lines.push("Call ID: "+c.id);
-    lines.push("───────────────────────────────────────");
-    lines.push(c.transcript);
-    lines.push("");
+  ["aircall","hubspot","library"].forEach(function(t) {
+    var panel = document.getElementById(t+"Panel");
+    var btn = document.getElementById("tab"+t.charAt(0).toUpperCase()+t.slice(1));
+    if(panel) panel.style.display = t===tab ? "flex" : "none";
+    if(btn) btn.className = "tab-btn" + (t===tab?" active":"");
   });
-  var txt = lines.join("\n");
-  var blob = new Blob([txt],{type:"text/plain"});
-  var url = URL.createObjectURL(blob);
-  var a = document.createElement("a");
-  a.href=url; a.download="combined_transcripts_"+new Date().toISOString().split("T")[0]+".txt";
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  showToast("Saved "+sel.length+" transcripts as one file","success");
+  if(tab==="library" && !_libLoaded) { _libLoaded=true; searchLibrary(); }
 }
  
-// ─── HUBSPOT ──────────────────────────────────────────────────────────────────
-var hsCalls = [], hsSelected = new Set();
- 
-async function fetchHubSpotCalls() {
-  var btn = document.getElementById("hsFetchBtn");
-  btn.disabled = true;
-  btn.innerHTML = "<span class='spinner'></span> Fetching...";
-  var days = parseInt(document.getElementById("hsDays").value);
-  var filter = document.getElementById("hsFilter").value;
-  var after = Date.now() - days * 86400000;
- 
-  try {
-    var res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": cfg.anthropicKey,
-        "anthropic-version": "2023-06-01"
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 4000,
-        tools: [{
-          type: "mcp",
-          server_label: "hubspot",
-          server_url: "https://mcp.hubspot.com/anthropic",
-          allowed_tools: ["search_crm_objects","get_crm_objects"]
-        }],
-        messages: [{
-          role: "user",
-          content: "Search HubSpot for call engagements from the last "+days+" days. For each call return: id, hs_call_title, hs_call_direction, hs_call_duration, hs_call_summary, hs_call_body, hs_timestamp, hs_call_status, associations with contacts. Return as many as possible up to 50. Respond ONLY with a JSON array of call objects, no other text."
-        }]
-      })
-    });
- 
-    var data = await res.json();
-    var text = (data.content||[]).filter(function(b){return b.type==="text";}).map(function(b){return b.text;}).join("");
- 
-    // Try to parse JSON from response
-    var parsed = [];
-    try {
-      var jsonMatch = text.match(/\[[\s\S]*\]/);
-      if(jsonMatch) parsed = JSON.parse(jsonMatch[0]);
-    } catch(e) {
-      // If parsing fails, show raw response for debugging
-      console.log("HubSpot response:", text);
-      showToast("Could not parse HubSpot response - check console","error");
-      btn.disabled=false; btn.innerHTML="Fetch HubSpot Calls";
-      return;
-    }
- 
-    // Normalize to our call format
-    hsCalls = parsed.map(function(c) {
-      var summary = c.hs_call_summary || c.hs_call_body || c.properties && (c.properties.hs_call_summary || c.properties.hs_call_body) || "";
-      var direction = c.hs_call_direction || (c.properties && c.properties.hs_call_direction) || "unknown";
-      var ts = c.hs_timestamp || (c.properties && c.properties.hs_timestamp) || Date.now();
-      var title = c.hs_call_title || (c.properties && c.properties.hs_call_title) || "HubSpot Call";
-      var dur_ms = parseInt(c.hs_call_duration || (c.properties && c.properties.hs_call_duration) || 0);
- 
-      if(filter !== "all" && direction.toLowerCase().indexOf(filter) === -1) return null;
- 
-      return {
-        id: "hs_"+(c.id||Math.random()),
-        started_at: Math.floor(new Date(ts).getTime()/1000),
-        duration: Math.floor(dur_ms/1000),
-        direction: direction.toLowerCase().indexOf("inbound") > -1 ? "inbound" : "outbound",
-        contact: { name: title },
-        user: { name: "HubSpot" },
-        transcript: summary,
-        _source: "hubspot"
-      };
-    }).filter(Boolean);
- 
-    hsSelected.clear();
-    renderHsCallList();
-    showToast("Loaded "+hsCalls.length+" HubSpot calls","success");
- 
-  } catch(ex) {
-    showToast("Error: "+ex.message,"error");
-    console.error(ex);
-  } finally {
-    btn.disabled=false; btn.innerHTML="Fetch HubSpot Calls";
-  }
-}
- 
-function renderHsCallList() {
-  var list = document.getElementById("hsCallList");
-  var count = document.getElementById("hsCallCount");
-  if(!hsCalls.length) {
-    count.textContent = "No calls found";
-    list.innerHTML = "<div class='empty-st'><div style='font-size:11px'>No HubSpot calls found</div></div>";
-    return;
-  }
-  var withNotes = hsCalls.filter(function(c){return c.transcript;}).length;
-  count.textContent = hsCalls.length+" calls · "+withNotes+" with notes";
-  list.innerHTML = hsCalls.map(function(c) {
-    var d = new Date(c.started_at*1000);
-    var ds = d.toLocaleDateString("en-US",{month:"short",day:"numeric"});
-    var ts = d.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"});
-    var sel = hsSelected.has(c.id);
-    var hasT = c.transcript && c.transcript.length;
-    return "<div class='call-item"+(sel?" sel":"")+"' data-hsid='"+c.id+"'>" +
-      "<div class='chk'></div>" +
-      "<div style='flex:1;min-width:0'>" +
-        "<div class='cname'>"+esc(c.contact.name||"Unknown")+"</div>" +
-        "<div class='cmeta'><span class='cdate'>"+ds+" "+ts+"</span><span class='cdur'>"+dur(c.duration)+"</span>" +
-          "<span class='tag "+(c.direction==="inbound"?"tag-in":"tag-out")+"'>"+c.direction+"</span>" +
-          "<span class='tag' style='background:rgba(100,120,255,.1);color:#8899ff'>hubspot</span>" +
-          (hasT?"<span class='tag tag-yes'>notes</span>":"<span class='tag tag-no'>no notes</span>") +
-        "</div>" +
-      "</div></div>";
-  }).join("");
-}
- 
-// Wire analyze to also work with HubSpot selected calls
-var _origAnalyze = analyze;
-async function analyze() {
-  // Check if we have HS calls selected — merge them with aircall selected for analysis
-  var hsWithNotes = hsCalls.filter(function(c){ return hsSelected.has(c.id) && c.transcript; });
-  if(hsWithNotes.length > 0) {
-    // Add HS calls temporarily to the calls array for analysis
-    var origCalls = calls.slice();
-    hsWithNotes.forEach(function(c){ if(!calls.find(function(x){return x.id===c.id;})) calls.push(c); selected.add(c.id); });
-    await _origAnalyze();
-    calls = origCalls;
-  } else {
-    await _origAnalyze();
-  }
-}
- 
+// ── CALENDAR ───────────────────────────────────────────────────────────────────
 function handlePresetChange() {
   var val = document.getElementById("dateRangePreset").value;
   var row = document.getElementById("customDateRow");
-  row.style.display = val === "custom" ? "" : "none";
-  if(val === "custom") {
-    var now = new Date();
-    var week = new Date(now - 6*86400000);
-    calState.to.selected = fmtDate(now);
-    calState.from.selected = fmtDate(week);
+  row.style.display = val==="custom" ? "" : "none";
+  if(val==="custom") {
+    var now = new Date(), week = new Date(now-6*86400000);
+    calState.to.selected = fmtDate(now); calState.from.selected = fmtDate(week);
     calState.to.year = now.getFullYear(); calState.to.month = now.getMonth();
     calState.from.year = week.getFullYear(); calState.from.month = week.getMonth();
     document.getElementById("dateTo").value = fmtDateDisplay(now);
@@ -958,467 +494,435 @@ function handlePresetChange() {
   }
 }
  
-function fmtDate(d) {
-  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
-}
- 
-function fmtDateDisplay(d) {
-  return d.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
-}
+function fmtDate(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function fmtDateDisplay(d){ return d.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}); }
  
 function toggleCal(which) {
-  if(!calState) return;
   var fromPop = document.getElementById("calFrom");
   var toPop = document.getElementById("calTo");
-  if(which === "from") {
-    toPop.classList.remove("open");
-    var wasOpen = fromPop.classList.contains("open");
-    fromPop.classList.toggle("open");
-    if(!wasOpen) renderCal("from");
-  } else {
-    fromPop.classList.remove("open");
-    var wasOpen = toPop.classList.contains("open");
-    toPop.classList.toggle("open");
-    if(!wasOpen) renderCal("to");
-  }
+  if(which==="from") { toPop.classList.remove("open"); var was=fromPop.classList.contains("open"); fromPop.classList.toggle("open"); if(!was) renderCal("from"); }
+  else { fromPop.classList.remove("open"); var was=toPop.classList.contains("open"); toPop.classList.toggle("open"); if(!was) renderCal("to"); }
 }
  
 function renderCal(which) {
   var state = calState[which];
-  var popup = document.getElementById(which === "from" ? "calFrom" : "calTo");
-  var MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-  var DAYS = ["Su","Mo","Tu","We","Th","Fr","Sa"];
+  var popup = document.getElementById(which==="from"?"calFrom":"calTo");
+  var MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+  var DAYS=["Su","Mo","Tu","We","Th","Fr","Sa"];
   var today = fmtDate(new Date());
- 
-  var firstDay = new Date(state.year, state.month, 1).getDay();
-  var daysInMonth = new Date(state.year, state.month+1, 0).getDate();
-  var daysInPrev = new Date(state.year, state.month, 0).getDate();
- 
-  var html = "<div class=\"cal-nav\">" +
-    "<button class=\"cal-nav-btn\" onclick=\"calNav('"+which+"',\'prev\')\">&lt;</button>" +
-    "<span class=\"cal-month\">"+MONTHS[state.month]+" "+state.year+"</span>" +
-    "<button class=\"cal-nav-btn\" onclick=\"calNav('"+which+"',\'next\')\">&gt;</button>" +
-    "</div><div class=\"cal-grid\">";
- 
-  DAYS.forEach(function(d){ html += "<div class=\"cal-dow\">"+d+"</div>"; });
- 
-  // prev month overflow
-  for(var i = 0; i < firstDay; i++) {
-    html += "<div class=\"cal-day other-month\">"+(daysInPrev - firstDay + i + 1)+"</div>";
+  var firstDay = new Date(state.year,state.month,1).getDay();
+  var daysInMonth = new Date(state.year,state.month+1,0).getDate();
+  var daysInPrev = new Date(state.year,state.month,0).getDate();
+  var html = "<div class='cal-nav'><button class='cal-nav-btn' onclick='calNav(\""+which+"\",\"prev\")'>&lt;</button><span class='cal-month'>"+MONTHS[state.month]+" "+state.year+"</span><button class='cal-nav-btn' onclick='calNav(\""+which+"\",\"next\")'>&gt;</button></div><div class='cal-grid'>";
+  DAYS.forEach(function(d){ html+="<div class='cal-dow'>"+d+"</div>"; });
+  for(var i=0;i<firstDay;i++) html+="<div class='cal-day other-month'>"+(daysInPrev-firstDay+i+1)+"</div>";
+  for(var d=1;d<=daysInMonth;d++) {
+    var ds=state.year+"-"+String(state.month+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");
+    var cls="cal-day"+(ds===today?" today":"")+(ds===state.selected?" selected":"");
+    html+="<div class='"+cls+"' onclick='selectCalDay(\""+which+"\",\""+ds+"\")'>" +d+"</div>";
   }
- 
-  // current month days
-  for(var d = 1; d <= daysInMonth; d++) {
-    var dateStr = state.year+"-"+String(state.month+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");
-    var cls = "cal-day";
-    if(dateStr === today) cls += " today";
-    if(dateStr === state.selected) cls += " selected";
-    html += "<div class=\""+cls+"\" onclick=\"selectCalDay('"+which+"','"+dateStr+"')\" >"+d+"</div>";
-  }
- 
-  // next month overflow
-  var remaining = (7 - (firstDay + daysInMonth) % 7) % 7;
-  for(var i = 1; i <= remaining; i++) {
-    html += "<div class=\"cal-day other-month\">"+i+"</div>";
-  }
- 
-  html += "</div>";
-  popup.innerHTML = html;
+  var rem=(7-(firstDay+daysInMonth)%7)%7;
+  for(var i=1;i<=rem;i++) html+="<div class='cal-day other-month'>"+i+"</div>";
+  popup.innerHTML=html+"</div>";
 }
  
-function calNav(which, dir) {
-  var state = calState[which];
-  if(dir === "prev") {
-    state.month--; if(state.month < 0){ state.month=11; state.year--; }
-  } else {
-    state.month++; if(state.month > 11){ state.month=0; state.year++; }
-  }
+function calNav(which,dir) {
+  var s=calState[which];
+  if(dir==="prev"){s.month--;if(s.month<0){s.month=11;s.year--;}}
+  else{s.month++;if(s.month>11){s.month=0;s.year++;}}
   renderCal(which);
 }
  
-function selectCalDay(which, dateStr) {
-  calState[which].selected = dateStr;
-  var parts = dateStr.split("-");
-  var d = new Date(parseInt(parts[0]), parseInt(parts[1])-1, parseInt(parts[2]));
-  var inputId = which === "from" ? "dateFrom" : "dateTo";
-  document.getElementById(inputId).value = fmtDateDisplay(d);
-  document.getElementById(which === "from" ? "calFrom" : "calTo").classList.remove("open");
+function selectCalDay(which,dateStr) {
+  calState[which].selected=dateStr;
+  var parts=dateStr.split("-");
+  var d=new Date(parseInt(parts[0]),parseInt(parts[1])-1,parseInt(parts[2]));
+  document.getElementById(which==="from"?"dateFrom":"dateTo").value=fmtDateDisplay(d);
+  document.getElementById(which==="from"?"calFrom":"calTo").classList.remove("open");
 }
  
-// Close calendars when clicking outside
-document.addEventListener("click", function(e) {
-  if(!e.target.closest(".cal-wrap")) {
-    document.getElementById("calFrom").classList.remove("open");
-    document.getElementById("calTo").classList.remove("open");
+document.addEventListener("click",function(e){ if(!e.target.closest(".cal-wrap")){ var f=document.getElementById("calFrom"),t=document.getElementById("calTo"); if(f)f.classList.remove("open"); if(t)t.classList.remove("open"); } });
+ 
+// ── AIRCALL API ────────────────────────────────────────────────────────────────
+async function aircallFetch(path) {
+  if(!cfg.aircallId||!cfg.aircallToken){ showToast("Configure Aircall credentials first","error"); openModal(); throw new Error("Missing credentials"); }
+  var creds = btoa(cfg.aircallId+":"+cfg.aircallToken);
+  var r = await fetch("/api/aircall?path="+encodeURIComponent(path), { headers:{"x-aircall-auth":creds} });
+  return r;
+}
+ 
+function extractTranscript(td) {
+  if(!td) return "";
+  if(td.transcription && td.transcription.content && td.transcription.content.utterances) {
+    var u=td.transcription.content.utterances;
+    if(u.length) return u.map(function(x){ return (x.participant_type==="internal"?"Agent":"Customer")+": "+x.text; }).join("\n");
   }
-});
+  if(td.transcription && td.transcription.sentences && td.transcription.sentences.length)
+    return td.transcription.sentences.map(function(s){ return (s.speaker||s.channel||"Speaker")+": "+(s.text||s.content||""); }).join("\n");
+  if(td.transcript) return td.transcript;
+  return "";
+}
  
+async function fetchCalls() {
+  if(!cfg.aircallId||!cfg.aircallToken){ showToast("Configure Aircall credentials first","error"); openModal(); return; }
+  var btn=document.getElementById("fetchBtn"), txt=document.getElementById("fetchTxt");
+  btn.disabled=true; txt.innerHTML="<span class='spinner spinner-dark'></span> Fetching...";
+  var preset=document.getElementById("dateRangePreset").value;
+  var from,to;
+  if(preset==="custom") {
+    var fv=calState.from.selected, tv=calState.to.selected;
+    if(!fv||!tv){ showToast("Select From and To dates","error"); btn.disabled=false; txt.innerHTML="Fetch Calls"; return; }
+    from=Math.floor(new Date(fv).getTime()/1000);
+    var tp=tv.split("-"); to=Math.floor(new Date(parseInt(tp[0]),parseInt(tp[1])-1,parseInt(tp[2]),23,59,59).getTime()/1000);
+  } else {
+    var days=parseInt(preset);
+    from=Math.floor((Date.now()-days*86400000)/1000);
+    to=Math.floor(Date.now()/1000);
+  }
+  var filter=document.getElementById("filterType").value;
+  try {
+    var allCalls=[],page=1,hasMore=true;
+    while(hasMore&&allCalls.length<2000) {
+      txt.innerHTML="<span class='spinner spinner-dark'></span> Fetching... "+allCalls.length;
+      var r=await aircallFetch("calls?from="+from+(to?"&to="+to:"")+"&per_page=50&page="+page+"&order=DESC");
+      if(!r.ok){ var e=await r.json().catch(function(){return{};}); throw new Error(e.message||"Aircall error "+r.status); }
+      var d=await r.json(); var pg=d.calls||[];
+      allCalls=allCalls.concat(pg);
+      if(pg.length<50) hasMore=false; else page++;
+      if(hasMore) await new Promise(function(r){setTimeout(r,200);});
+    }
+    if(filter==="inbound") allCalls=allCalls.filter(function(c){return c.direction==="inbound";});
+    else if(filter==="outbound") allCalls=allCalls.filter(function(c){return c.direction==="outbound";});
+    document.getElementById("callCount").textContent=allCalls.length+" calls loaded \u00b7 fetching transcripts...";
+    lastDebug=null;
+    for(var i=0;i<allCalls.length;i++) {
+      var pct=Math.round(i/allCalls.length*100);
+      txt.innerHTML="<span class='spinner spinner-dark'></span> Transcripts "+pct+"%";
+      var call=allCalls[i];
+      try {
+        var tr=await aircallFetch("calls/"+call.id+"/transcription");
+        var td=await tr.json();
+        if(!lastDebug) lastDebug={callId:call.id,status:tr.status,body:td};
+        if(!tr.ok){ call._err="HTTP "+tr.status+": "+(td.message||td.error||JSON.stringify(td)); }
+        else { var t=extractTranscript(td); if(t) call.transcript=t; else call._raw=JSON.stringify(td); }
+      } catch(ex){ call._err=ex.message; }
+      await new Promise(function(r){setTimeout(r,1100);});
+    }
+    if(filter==="transcript") allCalls=allCalls.filter(function(c){return c.transcript;});
+    calls=allCalls; selected.clear(); updateBadge(); renderList();
+    var wt=calls.filter(function(c){return c.transcript;}).length;
+    showToast("Loaded "+calls.length+" calls, "+wt+" with transcripts","success");
+    if(calls.length) saveCallsToSupabase(calls);
+  } catch(ex){ showToast("Error: "+ex.message,"error"); console.error(ex); }
+  finally{ btn.disabled=false; txt.innerHTML="Fetch Calls"; }
+}
  
-// ─── SUPABASE ─────────────────────────────────────────────────────────────────
-var libCalls = [], libSelected = new Set();
+function updateBadge(){ document.getElementById("selBadge").textContent=(selected.size+hsSelected.size)+" selected"; }
  
+function populateAgentFilter() {
+  var sel=document.getElementById("agentFilter"); var current=sel.value;
+  var agents={};
+  calls.forEach(function(c){ if(c.user&&c.user.name) agents[c.user.id]=c.user.name; });
+  var opts="<option value='all'>All agents</option>";
+  Object.keys(agents).sort(function(a,b){return agents[a].localeCompare(agents[b]);}).forEach(function(id){ opts+="<option value='"+id+"'"+(current===id?" selected":"")+">"+esc(agents[id])+"</option>"; });
+  sel.innerHTML=opts;
+}
+ 
+function getFilteredCalls() {
+  var agentId=document.getElementById("agentFilter").value;
+  if(agentId==="all") return calls;
+  return calls.filter(function(c){ return c.user&&String(c.user.id)===agentId; });
+}
+ 
+function renderList() {
+  var list=document.getElementById("callList"), count=document.getElementById("callCount");
+  if(!calls.length){ count.textContent="No calls found"; list.innerHTML="<div class='empty-st'><div>No calls found. Try a wider date range.</div></div>"; return; }
+  populateAgentFilter();
+  var filtered=getFilteredCalls();
+  var wt=filtered.filter(function(c){return c.transcript;}).length;
+  count.textContent=filtered.length+" calls \u00b7 "+wt+" transcripts";
+  list.innerHTML=filtered.map(function(c){
+    var hasT=c.transcript&&c.transcript.length;
+    var d=new Date(c.started_at*1000);
+    var ds=d.toLocaleDateString("en-US",{month:"short",day:"numeric"});
+    var ts=d.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"});
+    var name=(c.contact&&c.contact.name)||c.raw_digits||"Unknown";
+    var sel=selected.has(c.id);
+    return "<div class='call-item"+(sel?" sel":"")+"' data-id='"+c.id+"'><div class='chk'></div><div style='flex:1;min-width:0'><div class='cname'>"+esc(name)+"</div><div class='cmeta'><span class='cdate'>"+ds+" "+ts+"</span><span class='cdur'>"+dur(c.duration)+"</span><span class='tag "+(c.direction==="inbound"?"tag-in":"tag-out")+"'>"+c.direction+"</span>"+(hasT?"<span class='tag tag-yes'>transcript</span>":"<span class='tag tag-no'>no transcript</span>")+"</div></div></div>";
+  }).join("");
+}
+ 
+function viewSelected() {
+  var sel=calls.filter(function(c){return selected.has(c.id);});
+  if(!sel.length){ showToast("Select at least one call","error"); return; }
+  openTranscriptModal(sel[0]);
+}
+ 
+function openTranscriptModal(call) {
+  var hasT=call.transcript&&call.transcript.length;
+  var d=new Date(call.started_at*1000).toLocaleString();
+  var name=(call.contact&&call.contact.name)||call.raw_digits||"Unknown";
+  var agent=(call.user&&call.user.name)||"Unknown Agent";
+  document.getElementById("tModalTitle").textContent=name+" \u2192 "+agent+" \u00b7 "+d;
+  document.getElementById("transcriptModal").dataset.callId=call.id;
+  var body=document.getElementById("tModalBody");
+  if(hasT) {
+    body.innerHTML=call.transcript.split("\n").map(function(line){
+      var m=line.match(/^([^:]+):\s*(.*)/);
+      return m?"<span class='speaker-name'>"+esc(m[1])+"</span>"+esc(m[2])+"\n":esc(line)+"\n";
+    }).join("");
+  } else { body.innerHTML="<span style='color:var(--text3);font-style:italic'>No transcript available.</span>"; }
+  document.getElementById("transcriptModal").classList.add("open");
+}
+ 
+function dlTranscript(call) {
+  var d=new Date(call.started_at*1000); var ds=d.toISOString().split("T")[0];
+  var name=((call.contact&&call.contact.name)||call.raw_digits||"unknown").replace(/[^a-z0-9]/gi,"_");
+  var agent=((call.user&&call.user.name)||"unknown").replace(/[^a-z0-9]/gi,"_");
+  var txt=["CALL TRANSCRIPT","===============","Date: "+d.toLocaleString(),"Contact: "+((call.contact&&call.contact.name)||call.raw_digits||"Unknown"),"Agent: "+((call.user&&call.user.name)||"Unknown"),"Direction: "+call.direction,"Duration: "+dur(call.duration),"Call ID: "+call.id,"","TRANSCRIPT","----------",call.transcript||"(no transcript)"].join("\n");
+  var blob=new Blob([txt],{type:"text/plain"}); var url=URL.createObjectURL(blob);
+  var a=document.createElement("a"); a.href=url; a.download="transcript_"+ds+"_"+name+"_"+agent+".txt";
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+ 
+function saveSelected() {
+  var sel=calls.filter(function(c){return selected.has(c.id)&&c.transcript;});
+  if(!sel.length){ showToast("No calls with transcripts selected","error"); return; }
+  sel.forEach(dlTranscript);
+  showToast("Saved "+sel.length+" file"+(sel.length>1?"s":""),"success");
+}
+ 
+function saveAllAsOne() {
+  var sel=calls.filter(function(c){return selected.has(c.id)&&c.transcript;});
+  if(!sel.length){ showToast("No calls with transcripts selected","error"); return; }
+  var lines=["COMBINED CALL TRANSCRIPTS","========================","Generated: "+new Date().toLocaleString(),"Total calls: "+sel.length,"",""];
+  sel.forEach(function(c,i){
+    var d=new Date(c.started_at*1000).toLocaleString();
+    var name=(c.contact&&c.contact.name)||c.raw_digits||"Unknown";
+    var agent=(c.user&&c.user.name)||"Unknown";
+    lines.push("\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550");
+    lines.push("CALL "+(i+1)+" OF "+sel.length);
+    lines.push("Date: "+d); lines.push("Contact: "+name); lines.push("Agent: "+agent);
+    lines.push("Direction: "+c.direction); lines.push("Duration: "+dur(c.duration)); lines.push("Call ID: "+c.id);
+    lines.push("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
+    lines.push(c.transcript); lines.push("");
+  });
+  var blob=new Blob([lines.join("\n")],{type:"text/plain"}); var url=URL.createObjectURL(blob);
+  var a=document.createElement("a"); a.href=url; a.download="combined_transcripts_"+new Date().toISOString().split("T")[0]+".txt";
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  showToast("Saved "+sel.length+" transcripts as one file","success");
+}
+ 
+function showDebug() {
+  var area=document.getElementById("analysisArea");
+  var wt=calls.filter(function(c){return c.transcript;}).length;
+  var errs=calls.filter(function(c){return c._err;}).slice(0,5).map(function(c){return "Call "+c.id+": "+c._err;}).join("\n");
+  var raws=calls.filter(function(c){return c._raw;}).slice(0,2).map(function(c){return "Call "+c.id+": "+c._raw;}).join("\n\n");
+  var dbg="Calls: "+calls.length+"\nWith transcripts: "+wt+"\nErrors: "+calls.filter(function(c){return c._err;}).length+"\nUnknown shape: "+calls.filter(function(c){return c._raw;}).length+"\n\n";
+  if(lastDebug) dbg+="--- FIRST TRANSCRIPT API RESPONSE ---\nCall ID: "+lastDebug.callId+"\nHTTP Status: "+lastDebug.status+"\nBody:\n"+JSON.stringify(lastDebug.body,null,2);
+  else dbg+="No transcript API response yet. Fetch calls first.";
+  if(errs) dbg+="\n\n--- ERRORS ---\n"+errs;
+  if(raws) dbg+="\n\n--- UNKNOWN SHAPES ---\n"+raws;
+  area.innerHTML="<div class='dbg'><div class='dbg-hdr'>Debug Info</div><div class='dbg-body'>"+esc(dbg)+"</div></div>";
+}
+ 
+async function lookupCall() {
+  var callId=document.getElementById("callIdInput").value.trim();
+  if(!callId){ showToast("Enter a call ID","error"); return; }
+  var btn=document.getElementById("lookupBtn"); btn.disabled=true; btn.textContent="...";
+  try {
+    var r=await aircallFetch("calls/"+callId);
+    if(!r.ok){ var e=await r.json().catch(function(){return{};}); throw new Error(e.message||"Call not found: "+r.status); }
+    var d=await r.json(); var call=d.call;
+    if(!call) throw new Error("Call not found");
+    var tr=await aircallFetch("calls/"+callId+"/transcription");
+    var td=await tr.json();
+    if(!lastDebug) lastDebug={callId:callId,status:tr.status,body:td};
+    if(tr.ok){ var t=extractTranscript(td); if(t) call.transcript=t; else call._raw=JSON.stringify(td); }
+    else call._err="HTTP "+tr.status+": "+(td.message||td.error||JSON.stringify(td));
+    var exists=calls.find(function(c){return c.id===call.id;});
+    if(!exists) calls.unshift(call); else calls[calls.indexOf(exists)]=call;
+    selected.clear(); selected.add(call.id); updateBadge(); renderList();
+    showToast("Call "+callId+" loaded"+(call.transcript?" with transcript":""),"success");
+  } catch(ex){ showToast("Error: "+ex.message,"error"); }
+  finally{ btn.disabled=false; btn.textContent="Go"; }
+}
+ 
+// ── HUBSPOT ────────────────────────────────────────────────────────────────────
+async function fetchHubSpotCalls() {
+  var btn=document.getElementById("hsFetchBtn"); btn.disabled=true; btn.innerHTML="<span class='spinner spinner-dark'></span> Fetching...";
+  var days=parseInt(document.getElementById("hsDays").value);
+  var filter=document.getElementById("hsFilter").value;
+  try {
+    var res=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":cfg.anthropicKey,"anthropic-version":"2023-06-01"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,tools:[{type:"mcp",server_label:"hubspot",server_url:"https://mcp.hubspot.com/anthropic",allowed_tools:["search_crm_objects","get_crm_objects"]}],messages:[{role:"user",content:"Search HubSpot for call engagements from the last "+days+" days. For each call return: id, hs_call_title, hs_call_direction, hs_call_duration, hs_call_summary, hs_call_body, hs_timestamp. Return up to 50. Respond ONLY with a JSON array of call objects, no other text."}]})});
+    var data=await res.json();
+    var text=(data.content||[]).filter(function(b){return b.type==="text";}).map(function(b){return b.text;}).join("");
+    var parsed=[];
+    try { var m=text.match(/\[[\s\S]*\]/); if(m) parsed=JSON.parse(m[0]); } catch(e){ console.log("HubSpot response:",text); showToast("Could not parse HubSpot response","error"); return; }
+    hsCalls=parsed.map(function(c){
+      var summary=c.hs_call_summary||c.hs_call_body||(c.properties&&(c.properties.hs_call_summary||c.properties.hs_call_body))||"";
+      var direction=c.hs_call_direction||(c.properties&&c.properties.hs_call_direction)||"unknown";
+      var ts=c.hs_timestamp||(c.properties&&c.properties.hs_timestamp)||Date.now();
+      var title=c.hs_call_title||(c.properties&&c.properties.hs_call_title)||"HubSpot Call";
+      var dur_ms=parseInt(c.hs_call_duration||(c.properties&&c.properties.hs_call_duration)||0);
+      if(filter!=="all"&&direction.toLowerCase().indexOf(filter)===-1) return null;
+      return {id:"hs_"+(c.id||Math.random()),started_at:Math.floor(new Date(ts).getTime()/1000),duration:Math.floor(dur_ms/1000),direction:direction.toLowerCase().indexOf("inbound")>-1?"inbound":"outbound",contact:{name:title},user:{name:"HubSpot"},transcript:summary,_source:"hubspot"};
+    }).filter(Boolean);
+    hsSelected.clear(); renderHsCallList();
+    showToast("Loaded "+hsCalls.length+" HubSpot calls","success");
+  } catch(ex){ showToast("Error: "+ex.message,"error"); console.error(ex); }
+  finally{ btn.disabled=false; btn.innerHTML="Fetch HubSpot Calls"; }
+}
+ 
+function renderHsCallList() {
+  var list=document.getElementById("hsCallList"), count=document.getElementById("hsCallCount");
+  if(!hsCalls.length){ count.textContent="No calls found"; list.innerHTML="<div class='empty-st'><div>No HubSpot calls found</div></div>"; return; }
+  var wn=hsCalls.filter(function(c){return c.transcript;}).length;
+  count.textContent=hsCalls.length+" calls \u00b7 "+wn+" with notes";
+  list.innerHTML=hsCalls.map(function(c){
+    var d=new Date(c.started_at*1000); var ds=d.toLocaleDateString("en-US",{month:"short",day:"numeric"}); var ts=d.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"});
+    var sel=hsSelected.has(c.id); var hasT=c.transcript&&c.transcript.length;
+    return "<div class='call-item"+(sel?" sel":"")+"' data-hsid='"+c.id+"'><div class='chk'></div><div style='flex:1;min-width:0'><div class='cname'>"+esc(c.contact.name||"Unknown")+"</div><div class='cmeta'><span class='cdate'>"+ds+" "+ts+"</span><span class='cdur'>"+dur(c.duration)+"</span><span class='tag "+(c.direction==="inbound"?"tag-in":"tag-out")+"'>"+c.direction+"</span><span class='tag' style='background:#eef;color:#446'>hubspot</span>"+(hasT?"<span class='tag tag-yes'>notes</span>":"")+"</div></div></div>";
+  }).join("");
+}
+ 
+// ── SUPABASE ───────────────────────────────────────────────────────────────────
 async function sbFetch(path, method, body) {
-  method = method || "GET";
-  var headers = {
-    "Content-Type": "application/json",
-    "x-supabase-path": path,
-    "x-supabase-method": method
-  };
-  if(body) headers["x-supabase-body"] = JSON.stringify(body);
-  var r = await fetch("/api/supabase", { method: "POST", headers: headers });
+  method=method||"GET";
+  var headers={"Content-Type":"application/json","x-supabase-path":path,"x-supabase-method":method};
+  if(body) headers["x-supabase-body"]=JSON.stringify(body);
+  var r=await fetch("/api/supabase",{method:"POST",headers:headers});
   return r;
 }
  
 async function saveCallsToSupabase(callsToSave) {
-  var withT = callsToSave.filter(function(c){ return c.transcript && c.transcript.length; });
+  var withT=callsToSave.filter(function(c){return c.transcript&&c.transcript.length;});
   if(!withT.length) return;
-  var rows = withT.map(function(c) {
-    return {
-      call_id: String(c.id),
-      contact_name: (c.contact && c.contact.name) || c.raw_digits || "Unknown",
-      agent_name: (c.user && c.user.name) || "Unknown",
-      direction: c.direction || "unknown",
-      duration_seconds: c.duration || 0,
-      started_at: new Date(c.started_at * 1000).toISOString(),
-      transcript: c.transcript,
-      source: c._source || "aircall"
-    };
-  });
-  try {
-    var r = await sbFetch("calls?on_conflict=call_id", "POST", rows);
-    if(r.ok) {
-      showToast("Saved "+withT.length+" transcript"+(withT.length>1?"s":"")+" to library", "success");
-    }
-  } catch(ex) {
-    console.error("Supabase save error:", ex);
-  }
+  var rows=withT.map(function(c){return {call_id:String(c.id),contact_name:(c.contact&&c.contact.name)||c.raw_digits||"Unknown",agent_name:(c.user&&c.user.name)||"Unknown",direction:c.direction||"unknown",duration_seconds:c.duration||0,started_at:new Date(c.started_at*1000).toISOString(),transcript:c.transcript,source:c._source||"aircall"};});
+  try { var r=await sbFetch("calls?on_conflict=call_id","POST",rows); if(r.ok) showToast("Saved "+withT.length+" transcript"+(withT.length>1?"s":"")+" to library","success"); }
+  catch(ex){ console.error("Supabase save error:",ex); }
 }
  
 async function saveAnalysisToSupabase(prompt, result, callIds) {
-  try {
-    await sbFetch("analyses", "POST", {
-      prompt: prompt,
-      result: result,
-      call_ids: callIds.map(String),
-      call_count: callIds.length
-    });
-  } catch(ex) {
-    console.error("Supabase analysis save error:", ex);
-  }
+  try { await sbFetch("analyses","POST",{prompt:prompt,result:result,call_ids:callIds.map(String),call_count:callIds.length}); }
+  catch(ex){ console.error("Supabase analysis save error:",ex); }
 }
  
 async function searchLibrary() {
-  var btn = document.getElementById("libSearchBtn");
-  btn.disabled = true;
-  btn.innerHTML = "<span class='spinner'></span> Searching...";
-  var search = document.getElementById("libSearch").value.trim();
-  var agent = document.getElementById("libAgent").value;
-  var fromDate = document.getElementById("libFrom").value;
-  var toDate = document.getElementById("libTo").value;
- 
-  var filters = [];
+  var btn=document.getElementById("libSearchBtn"); btn.disabled=true; btn.innerHTML="<span class='spinner spinner-dark'></span> Searching...";
+  var search=document.getElementById("libSearch").value.trim();
+  var agent=document.getElementById("libAgent").value;
+  var fromDate=document.getElementById("libFrom").value;
+  var toDate=document.getElementById("libTo").value;
+  var filters=[];
   if(agent) filters.push("agent_name=eq."+encodeURIComponent(agent));
   if(fromDate) filters.push("started_at=gte."+fromDate+"T00:00:00Z");
   if(toDate) filters.push("started_at=lte."+toDate+"T23:59:59Z");
   if(search) filters.push("or=(contact_name.ilike.*"+encodeURIComponent(search)+"*,agent_name.ilike.*"+encodeURIComponent(search)+"*,transcript.ilike.*"+encodeURIComponent(search)+"*)");
- 
-  var path = "calls?order=started_at.desc&limit=200";
-  if(filters.length) path += "&" + filters.join("&");
- 
+  var path="calls?order=started_at.desc&limit=200"+(filters.length?"&"+filters.join("&"):"");
   try {
-    var r = await sbFetch(path);
-    if(!r.ok) throw new Error("Search failed: " + r.status);
-    var data = await r.json();
-    libCalls = data;
-    libSelected.clear();
-    renderLibList();
-    document.getElementById("libCount").textContent = data.length + " results";
-    // Populate agent dropdown
-    populateLibAgents(data);
-  } catch(ex) {
-    showToast("Library error: " + ex.message, "error");
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = "Search";
-  }
-}
- 
-function populateLibAgents(data) {
-  var agents = {};
-  data.forEach(function(c){ if(c.agent_name) agents[c.agent_name] = 1; });
-  var sel = document.getElementById("libAgent");
-  var current = sel.value;
-  sel.innerHTML = "<option value=\"\">All agents</option>";
-  Object.keys(agents).sort().forEach(function(a){
-    sel.innerHTML += "<option value=\""+esc(a)+"\">"+(a===current?"selected":"")+esc(a)+"</option>";
-  });
-  if(current) sel.value = current;
+    var r=await sbFetch(path);
+    if(!r.ok) throw new Error("Search failed: "+r.status);
+    var data=await r.json();
+    libCalls=data; libSelected.clear(); renderLibList();
+    document.getElementById("libCount").textContent=data.length+" results";
+    var agents={}; data.forEach(function(c){if(c.agent_name) agents[c.agent_name]=1;});
+    var sel=document.getElementById("libAgent"); var cur=sel.value;
+    sel.innerHTML="<option value=''>All agents</option>";
+    Object.keys(agents).sort().forEach(function(a){ sel.innerHTML+="<option value='"+esc(a)+"'>"+esc(a)+"</option>"; });
+    if(cur) sel.value=cur;
+  } catch(ex){ showToast("Library error: "+ex.message,"error"); }
+  finally{ btn.disabled=false; btn.innerHTML="Search"; }
 }
  
 function renderLibList() {
-  var list = document.getElementById("libCallList");
-  if(!libCalls.length) {
-    list.innerHTML = "<div class=\"empty-st\"><div>No results found</div></div>";
-    return;
-  }
-  list.innerHTML = libCalls.map(function(c) {
-    var sel = libSelected.has(c.call_id);
-    var d = new Date(c.started_at);
-    var ds = d.toLocaleDateString("en-US",{month:"short",day:"numeric"});
-    var ts = d.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"});
-    var hasT = c.transcript && c.transcript.length;
-    return "<div class=\"call-item"+(sel?" sel":"")+"' data-libid=\""+esc(c.call_id)+"\">" +
-      "<div class=\"chk\"></div>" +
-      "<div style=\"flex:1;min-width:0\">" +
-        "<div class=\"cname\">"+esc(c.contact_name||"Unknown")+"</div>" +
-        "<div class=\"cmeta\">" +
-          "<span class=\"cdate\">"+ds+" "+ts+"</span>" +
-          "<span class=\"cdur\">"+dur(c.duration_seconds||0)+"</span>" +
-          "<span class=\"tag "+(c.direction==="inbound"?"tag-in":"tag-out")+"\">"+c.direction+"</span>" +
-          "<span class=\"tag\" style=\"background:rgba(100,120,255,.1);color:#8899ff\">"+esc(c.agent_name||"?")+"</span>" +
-          (hasT?"<span class=\"tag tag-yes\">transcript</span>":"") +
-        "</div>" +
-      "</div></div>";
+  var list=document.getElementById("libCallList");
+  if(!libCalls.length){ list.innerHTML="<div class='empty-st'><div>No results found</div></div>"; return; }
+  list.innerHTML=libCalls.map(function(c){
+    var sel=libSelected.has(c.call_id);
+    var d=new Date(c.started_at); var ds=d.toLocaleDateString("en-US",{month:"short",day:"numeric"}); var ts=d.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"});
+    var hasT=c.transcript&&c.transcript.length;
+    return "<div class='call-item"+(sel?" sel":"")+"' data-libid='"+esc(c.call_id)+"'><div class='chk'></div><div style='flex:1;min-width:0'><div class='cname'>"+esc(c.contact_name||"Unknown")+"</div><div class='cmeta'><span class='cdate'>"+ds+" "+ts+"</span><span class='cdur'>"+dur(c.duration_seconds||0)+"</span><span class='tag "+(c.direction==="inbound"?"tag-in":"tag-out")+"'>"+c.direction+"</span><span class='tag' style='background:#e8f0fb;color:#2d5bbf'>"+esc(c.agent_name||"?")+"</span>"+(hasT?"<span class='tag tag-yes'>transcript</span>":"")+"</div></div></div>";
   }).join("");
 }
  
-// Override fetchCalls to auto-save to Supabase after fetching
-var _origFetchCalls = fetchCalls;
-async function fetchCalls() {
-  await _origFetchCalls();
-  if(calls.length) {
-    await saveCallsToSupabase(calls);
-  }
-}
- 
-// Override analyze to auto-save analysis to Supabase
-var _origAnalyzeSupabase = analyze;
+// ── ANALYZE ────────────────────────────────────────────────────────────────────
 async function analyze() {
-  var prompt = document.getElementById("promptInput").value.trim();
-  var sel = calls.filter(function(c){return selected.has(c.id);});
-  var hsWithNotes = hsCalls.filter(function(c){return hsSelected.has(c.id)&&c.transcript;});
-  var allSel = [].concat(sel, hsWithNotes);
-  await _origAnalyzeSupabase();
-  // Save result after a short delay to let DOM update
-  setTimeout(async function() {
-    var resultEl = document.querySelector(".result .result-body");
-    if(resultEl && prompt) {
-      var callIds = allSel.map(function(c){return c.id;});
-      await saveAnalysisToSupabase(prompt, resultEl.textContent, callIds);
-    }
-  }, 1000);
-}
- 
-// ─── LIBRARY EVENT LISTENERS ──────────────────────────────────────────────────
-document.getElementById("libSearchBtn").addEventListener("click", searchLibrary);
-document.getElementById("libSearch").addEventListener("keydown", function(e){ if(e.key==="Enter") searchLibrary(); });
-document.getElementById("libSelAll").addEventListener("click", function(){ libCalls.forEach(function(c){libSelected.add(c.call_id);}); renderLibList(); });
-document.getElementById("libSelNone").addEventListener("click", function(){ libSelected.clear(); renderLibList(); });
- 
-document.getElementById("libCallList").addEventListener("click", function(e){
-  var item = e.target.closest(".call-item");
-  if(item && item.dataset.libid) {
-    var id = item.dataset.libid;
-    if(libSelected.has(id)) libSelected.delete(id); else libSelected.add(id);
-    renderLibList();
-  }
-});
- 
-document.getElementById("libCallList").addEventListener("dblclick", function(e){
-  var item = e.target.closest(".call-item");
-  if(item && item.dataset.libid) {
-    var id = item.dataset.libid;
-    var c = libCalls.find(function(x){return x.call_id===id;});
-    if(c) {
-      // Open transcript modal with library call
-      var fakeCall = {
-        id: c.call_id,
-        started_at: new Date(c.started_at).getTime()/1000,
-        duration: c.duration_seconds,
-        direction: c.direction,
-        contact: { name: c.contact_name },
-        user: { name: c.agent_name },
-        transcript: c.transcript
-      };
-      openTranscriptModal(fakeCall);
-    }
-  }
-});
- 
-// Update switchTab to load library agents on first visit
-var _libLoaded = false;
-var _origSwitchTab = switchTab;
-function switchTab(tab) {
-  _origSwitchTab(tab);
-  if(tab === "library" && !_libLoaded) {
-    _libLoaded = true;
-    searchLibrary();
-  }
-  // Update panel display for library
-  var libPanel = document.getElementById("libraryPanel");
-  if(libPanel) libPanel.style.display = tab === "library" ? "flex" : "none";
-  // Update tab active state
-  var libTab = document.getElementById("tabLibrary");
-  if(libTab) libTab.className = "tab-btn" + (tab === "library" ? " active" : "");
-}
- 
-loadCfg();
-if(!cfg.aircallId) setTimeout(openModal, 500);
- 
-// Wire transcript modal
-document.getElementById("tModalClose").addEventListener("click", function(){ document.getElementById("transcriptModal").classList.remove("open"); });
-document.getElementById("tModalSave").addEventListener("click", function(){
-  var id = parseInt(document.getElementById("transcriptModal").dataset.callId);
-  var c = calls.find(function(x){return x.id===id;});
-  if(c) dlTranscript(c);
-});
-document.getElementById("tModalAnalyze").addEventListener("click", function(){
-  document.getElementById("transcriptModal").classList.remove("open");
-  var prompt = document.getElementById("promptInput").value.trim();
-  if(!prompt) document.getElementById("promptInput").value = PRESETS.summary;
-  analyze();
-});
- 
-// Override viewSelected to use modal instead of inline display
-document.getElementById("viewBtn").addEventListener("click", function(){
-  var sel = calls.filter(function(c){return selected.has(c.id);});
-  if(!sel.length) { showToast("Select at least one call","error"); return; }
-  if(sel.length === 1) {
-    openTranscriptModal(sel[0]);
-  } else {
-    // Show first selected call
-    openTranscriptModal(sel[0]);
-  }
-});
- 
-function openTranscriptModal(call) {
-  var hasT = call.transcript && call.transcript.length;
-  var d = new Date(call.started_at*1000).toLocaleString();
-  var name = (call.contact&&call.contact.name)||call.raw_digits||"Unknown";
-  var agent = (call.user&&call.user.name)||"Unknown Agent";
-  document.getElementById("tModalTitle").textContent = name + " → " + agent + " · " + d;
-  document.getElementById("transcriptModal").dataset.callId = call.id;
-  var body = document.getElementById("tModalBody");
-  if(hasT) {
-    body.innerHTML = call.transcript.split("\n").map(function(line){
-      var m = line.match(/^([^:]+):\s*(.*)/);
-      return m ? "<span class=\"speaker-name\">"+esc(m[1])+"</span>"+esc(m[2])+"\n" : esc(line)+"\n";
-    }).join("");
-  } else {
-    body.innerHTML = "<span style=\"color:var(--text3);font-style:italic\">No transcript available for this call.</span>";
-  }
-  document.getElementById("transcriptModal").classList.add("open");
-}
- 
-// Click on call item opens transcript modal on double click, single click selects
-document.getElementById("callList").addEventListener("dblclick", function(e){
-  var item = e.target.closest(".call-item");
-  if(item) {
-    var id = parseInt(item.dataset.id);
-    var c = calls.find(function(x){return x.id===id;});
-    if(c) openTranscriptModal(c);
-  }
-});
- 
-// Override clearMain
-document.getElementById("clearBtn").addEventListener("click", function(){
-  document.getElementById("analysisArea").innerHTML = "<div class=\"welcome\"><div class=\"welcome-title\">Support Call Analyzer</div><div class=\"welcome-sub\">Select calls from the sidebar, choose a prompt, and hit Analyze.</div></div>";
-});
- 
-// Fix analyze to write to analysisArea instead of tArea
-var _realAnalyze = analyze;
-async function analyze() {
-  if(!cfg.anthropicKey){showToast("Configure Anthropic API key first","error");openModal();return;}
+  if(!cfg.anthropicKey){ showToast("Configure Anthropic API key first","error"); openModal(); return; }
   var prompt=document.getElementById("promptInput").value.trim();
-  if(!prompt){showToast("Enter a prompt","error");return;}
+  if(!prompt){ showToast("Enter a prompt","error"); return; }
   var sel=calls.filter(function(c){return selected.has(c.id);});
   var hsWithNotes=hsCalls.filter(function(c){return hsSelected.has(c.id)&&c.transcript;});
   var allSel=[].concat(sel,hsWithNotes);
-  if(!allSel.length){showToast("Select at least one call","error");return;}
+  if(!allSel.length){ showToast("Select at least one call","error"); return; }
   var withT=allSel.filter(function(c){return c.transcript;});
-  if(!withT.length){showToast("None of the selected calls have transcripts","error");return;}
-  var btn=document.getElementById("analyzeBtn");
-  btn.disabled=true;btn.innerHTML="<span class=\"spinner spinner-w\"></span>";
+  if(!withT.length){ showToast("None of the selected calls have transcripts","error"); return; }
+  var btn=document.getElementById("analyzeBtn"); btn.disabled=true; btn.innerHTML="<span class='spinner'></span>";
   var block=withT.map(function(c,i){
     var d=new Date(c.started_at*1000).toLocaleString();
     var name=(c.contact&&c.contact.name)||c.raw_digits||"Unknown";
     var agent=(c.user&&c.user.name)||"Unknown";
-    var src=c._source==="hubspot"?" [HubSpot]":"";
-    return "--- CALL "+(i+1)+src+" ---\nDate: "+d+"\nContact: "+name+"\nAgent: "+agent+"\nDuration: "+dur(c.duration)+"\n\n"+c.transcript;
+    return "--- CALL "+(i+1)+(c._source==="hubspot"?" [HubSpot]":"")+" ---\nDate: "+d+"\nContact: "+name+"\nAgent: "+agent+"\nDuration: "+dur(c.duration)+"\n\n"+c.transcript;
   }).join("\n\n");
   var full=prompt+"\n\n===== TRANSCRIPTS ("+withT.length+" calls) =====\n\n"+block;
   var area=document.getElementById("analysisArea");
-  var loader=document.createElement("div");
-  loader.id="loader";loader.className="result";
-  loader.innerHTML="<div class=\"result-hdr\"><span class=\"result-title\">Analyzing "+withT.length+" transcript"+(withT.length>1?"s":"")+"...</span></div><div style=\"height:3px;background:var(--accent);animation:pulse 1s ease-in-out infinite\"></div>";
-  area.insertBefore(loader,area.firstChild);area.scrollTop=0;
-  try{
+  var loader=document.createElement("div"); loader.id="loader"; loader.className="result";
+  loader.innerHTML="<div class='result-hdr'><div class='result-dot' style='animation:pulse 1s ease-in-out infinite'></div><span class='result-title'>Analyzing "+withT.length+" transcript"+(withT.length>1?"s":"")+"...</span></div>";
+  area.insertBefore(loader,area.firstChild); area.scrollTop=0;
+  try {
     var res=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":cfg.anthropicKey,"anthropic-version":"2023-06-01"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,messages:[{role:"user",content:full}]})});
-    if(!res.ok){var e=await res.json().catch(function(){return{};});throw new Error((e.error&&e.error.message)||"API error "+res.status);}
+    if(!res.ok){ var e=await res.json().catch(function(){return{};}); throw new Error((e.error&&e.error.message)||"API error "+res.status); }
     var data=await res.json();
     var result=(data.content&&data.content[0]&&data.content[0].text)||"No response";
-    var l=document.getElementById("loader");if(l)l.remove();
-    var rd=document.createElement("div");rd.className="result";
+    var l=document.getElementById("loader"); if(l) l.remove();
+    var rd=document.createElement("div"); rd.className="result";
     var ts=new Date().toLocaleTimeString();
-    var selCount=withT.length;
-    rd.innerHTML="<div class=\"result-hdr\"><span class=\"result-title\">Analysis · "+selCount+" call"+(selCount>1?"s":"")+" · "+ts+"</span><button class=\"mini-btn\" data-save-analysis>Save</button></div><div class=\"result-body\">"+esc(result)+"</div>";
-    area.insertBefore(rd,area.firstChild);area.scrollTop=0;
+    rd.innerHTML="<div class='result-hdr'><div class='result-dot'></div><span class='result-title'>Analysis \u00b7 "+withT.length+" call"+(withT.length>1?"s":"")+" \u00b7 "+ts+"</span><button class='mini-btn' data-save-analysis>Save</button></div><div class='result-body'>"+esc(result)+"</div>";
+    area.insertBefore(rd,area.firstChild); area.scrollTop=0;
     showToast("Analysis complete","success");
-  }catch(ex){var l=document.getElementById("loader");if(l)l.remove();showToast("Error: "+ex.message,"error");}
-  finally{btn.disabled=false;btn.innerHTML="Analyze";}
+    saveAnalysisToSupabase(prompt, result, withT.map(function(c){return c.id;}));
+  } catch(ex){ var l=document.getElementById("loader"); if(l) l.remove(); showToast("Error: "+ex.message,"error"); }
+  finally{ btn.disabled=false; btn.innerHTML="Analyze"; }
 }
  
-document.getElementById("analysisArea").addEventListener("click",function(e){
-  var sa=e.target.closest("[data-save-analysis]");
-  if(sa){var txt=sa.closest(".result").querySelector(".result-body").textContent;var blob=new Blob([txt],{type:"text/plain"});var url=URL.createObjectURL(blob);var a=document.createElement("a");a.href=url;a.download="analysis_"+new Date().toISOString().split("T")[0]+".txt";document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);showToast("Saved","success");}
-});
+// ── EVENT LISTENERS ────────────────────────────────────────────────────────────
+document.getElementById("cfgBtn").addEventListener("click", openModal);
+document.getElementById("mClose").addEventListener("click", closeModal);
+document.getElementById("mCancel").addEventListener("click", closeModal);
+document.getElementById("mSave").addEventListener("click", saveCfg);
+document.getElementById("fetchBtn").addEventListener("click", fetchCalls);
+document.getElementById("saveBtn").addEventListener("click", saveSelected);
+document.getElementById("saveAllBtn").addEventListener("click", saveAllAsOne);
+document.getElementById("dbgBtn").addEventListener("click", showDebug);
+document.getElementById("lookupBtn").addEventListener("click", lookupCall);
+document.getElementById("selAll").addEventListener("click", function(){ calls.forEach(function(c){selected.add(c.id);}); updateBadge(); renderList(); });
+document.getElementById("selNone").addEventListener("click", function(){ selected.clear(); updateBadge(); renderList(); });
+document.getElementById("agentFilter").addEventListener("change", renderList);
+document.getElementById("hsFetchBtn").addEventListener("click", fetchHubSpotCalls);
+document.getElementById("hsSelAll").addEventListener("click", function(){ hsCalls.forEach(function(c){hsSelected.add(c.id);}); renderHsCallList(); });
+document.getElementById("hsSelNone").addEventListener("click", function(){ hsSelected.clear(); renderHsCallList(); });
+document.getElementById("libSearchBtn").addEventListener("click", searchLibrary);
+document.getElementById("libSearch").addEventListener("keydown", function(e){ if(e.key==="Enter") searchLibrary(); });
+document.getElementById("libSelAll").addEventListener("click", function(){ libCalls.forEach(function(c){libSelected.add(c.call_id);}); renderLibList(); });
+document.getElementById("libSelNone").addEventListener("click", function(){ libSelected.clear(); renderLibList(); });
+document.getElementById("analyzeBtn").addEventListener("click", analyze);
+document.getElementById("viewBtn").addEventListener("click", viewSelected);
+document.getElementById("clearBtn").addEventListener("click", function(){ document.getElementById("analysisArea").innerHTML="<div class='welcome'><div class='welcome-title' style='font-size:16px;color:var(--text2)'>Ready for your next analysis</div></div>"; });
  
+document.getElementById("callList").addEventListener("click", function(e){ var item=e.target.closest(".call-item"); if(item){ var id=parseInt(item.dataset.id); if(selected.has(id)) selected.delete(id); else selected.add(id); updateBadge(); renderList(); } });
+document.getElementById("callList").addEventListener("dblclick", function(e){ var item=e.target.closest(".call-item"); if(item){ var id=parseInt(item.dataset.id); var c=calls.find(function(x){return x.id===id;}); if(c) openTranscriptModal(c); } });
+document.getElementById("hsCallList").addEventListener("click", function(e){ var item=e.target.closest(".call-item"); if(item&&item.dataset.hsid){ var id=item.dataset.hsid; if(hsSelected.has(id)) hsSelected.delete(id); else hsSelected.add(id); updateBadge(); renderHsCallList(); } });
+document.getElementById("libCallList").addEventListener("click", function(e){ var item=e.target.closest(".call-item"); if(item&&item.dataset.libid){ var id=item.dataset.libid; if(libSelected.has(id)) libSelected.delete(id); else libSelected.add(id); renderLibList(); } });
+document.getElementById("libCallList").addEventListener("dblclick", function(e){ var item=e.target.closest(".call-item"); if(item&&item.dataset.libid){ var id=item.dataset.libid; var c=libCalls.find(function(x){return x.call_id===id;}); if(c){ var fc={id:c.call_id,started_at:new Date(c.started_at).getTime()/1000,duration:c.duration_seconds,direction:c.direction,contact:{name:c.contact_name},user:{name:c.agent_name},transcript:c.transcript}; openTranscriptModal(fc); } } });
 document.getElementById("tModalClose").addEventListener("click", function(){ document.getElementById("transcriptModal").classList.remove("open"); });
-document.getElementById("tModalSave").addEventListener("click", function(){
-  var id = parseInt(document.getElementById("transcriptModal").dataset.callId);
-  var c = calls.find(function(x){return x.id===id;});
-  if(c) dlTranscript(c);
-});
-document.getElementById("tModalAnalyze").addEventListener("click", function(){
-  document.getElementById("transcriptModal").classList.remove("open");
-  var prompt = document.getElementById("promptInput").value.trim();
-  if(!prompt) document.getElementById("promptInput").value = PRESETS.summary;
-  analyze();
-});
-document.getElementById("viewBtn").addEventListener("click", function(){
-  var sel = calls.filter(function(c){return selected.has(c.id);});
-  if(!sel.length) { showToast("Select at least one call","error"); return; }
-  openTranscriptModal(sel[0]);
-});
-function openTranscriptModal(call) {
-  var hasT = call.transcript && call.transcript.length;
-  var d = new Date(call.started_at*1000).toLocaleString();
-  var name = (call.contact&&call.contact.name)||call.raw_digits||"Unknown";
-  var agent = (call.user&&call.user.name)||"Unknown Agent";
-  document.getElementById("tModalTitle").textContent = name + " → " + agent + " · " + d;
-  document.getElementById("transcriptModal").dataset.callId = call.id;
-  var body = document.getElementById("tModalBody");
-  if(hasT) {
-    body.innerHTML = call.transcript.split("\n").map(function(line){
-      var m = line.match(/^([^:]+):\s*(.*)/);
-      return m ? "<span class=\"speaker-name\">"+esc(m[1])+"</span>"+esc(m[2])+"\n" : esc(line)+"\n";
-    }).join("");
-  } else {
-    body.innerHTML = "<span style=\"color:var(--text3);font-style:italic\">No transcript available.</span>";
-  }
-  document.getElementById("transcriptModal").classList.add("open");
-}
-document.getElementById("callList").addEventListener("dblclick", function(e){
-  var item = e.target.closest(".call-item");
-  if(item){ var id=parseInt(item.dataset.id); var c=calls.find(function(x){return x.id===id;}); if(c) openTranscriptModal(c); }
-});
-document.getElementById("clearBtn").addEventListener("click", function(){
-  document.getElementById("analysisArea").innerHTML = "<div class=\"welcome\"><div class=\"welcome-title\" style=\"font-size:16px;color:var(--text2)\">Ready for your next analysis</div></div>";
-});
-document.getElementById("analysisArea").addEventListener("click",function(e){
-  var sa=e.target.closest("[data-save-analysis]");
-  if(sa){var txt=sa.closest(".result").querySelector(".result-body").textContent;var blob=new Blob([txt],{type:"text/plain"});var url=URL.createObjectURL(blob);var a=document.createElement("a");a.href=url;a.download="analysis_"+new Date().toISOString().split("T")[0]+".txt";document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);showToast("Saved","success");}
-});
+document.getElementById("tModalSave").addEventListener("click", function(){ var id=parseInt(document.getElementById("transcriptModal").dataset.callId); var c=calls.find(function(x){return x.id===id;}); if(c) dlTranscript(c); });
+document.getElementById("tModalAnalyze").addEventListener("click", function(){ document.getElementById("transcriptModal").classList.remove("open"); if(!document.getElementById("promptInput").value.trim()) document.getElementById("promptInput").value=PRESETS.summary; analyze(); });
+document.getElementById("analysisArea").addEventListener("click", function(e){ var sa=e.target.closest("[data-save-analysis]"); if(sa){ var txt=sa.closest(".result").querySelector(".result-body").textContent; var blob=new Blob([txt],{type:"text/plain"}); var url=URL.createObjectURL(blob); var a=document.createElement("a"); a.href=url; a.download="analysis_"+new Date().toISOString().split("T")[0]+".txt"; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); showToast("Saved","success"); } });
+document.querySelectorAll(".preset").forEach(function(btn){ btn.addEventListener("click", function(){ document.getElementById("promptInput").value=PRESETS[btn.dataset.p]; }); });
+ 
+loadCfg();
+if(!cfg.aircallId) setTimeout(openModal, 500);
+ 
 </script>
 </body>
 </html>
