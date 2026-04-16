@@ -641,13 +641,13 @@ function renderList() {
     var ds=d.toLocaleDateString("en-US",{month:"short",day:"numeric"});
     var ts=d.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"});
     var name=(c.contact&&c.contact.name)||c.raw_digits||"Unknown";
-    var sel=selected.has(c.id);
+    var sel=selected.has(String(c.id));
     return "<div class='call-item"+(sel?" sel":"")+"' data-id='"+c.id+"'><div class='chk'></div><div style='flex:1;min-width:0'><div class='cname'>"+esc(name)+"</div><div class='cmeta'><span class='cdate'>"+ds+" "+ts+"</span><span class='cdur'>"+dur(c.duration)+"</span><span class='tag "+(c.direction==="inbound"?"tag-in":"tag-out")+"'>"+c.direction+"</span>"+(hasT?"<span class='tag tag-yes'>transcript</span>":"<span class='tag tag-no'>no transcript</span>")+"</div></div></div>";
   }).join("");
 }
  
 function viewSelected() {
-  var sel=calls.filter(function(c){return selected.has(c.id);});
+  var sel=calls.filter(function(c){return selected.has(String(c.id));});
   if(!sel.length){ showToast("Select at least one call","error"); return; }
   openTranscriptModal(sel[0]);
 }
@@ -679,14 +679,14 @@ function dlTranscript(call) {
 }
  
 function saveSelected() {
-  var sel=calls.filter(function(c){return selected.has(c.id)&&c.transcript;});
+  var sel=calls.filter(function(c){return selected.has(String(c.id))&&c.transcript;});
   if(!sel.length){ showToast("No calls with transcripts selected","error"); return; }
   sel.forEach(dlTranscript);
   showToast("Saved "+sel.length+" file"+(sel.length>1?"s":""),"success");
 }
  
 function saveAllAsOne() {
-  var sel=calls.filter(function(c){return selected.has(c.id)&&c.transcript;});
+  var sel=calls.filter(function(c){return selected.has(String(c.id))&&c.transcript;});
   if(!sel.length){ showToast("No calls with transcripts selected","error"); return; }
   var lines=["COMBINED CALL TRANSCRIPTS","========================","Generated: "+new Date().toLocaleString(),"Total calls: "+sel.length,"",""];
   sel.forEach(function(c,i){
@@ -855,7 +855,7 @@ function renderLibList() {
 async function analyze() {
   var prompt=document.getElementById("promptInput").value.trim();
   if(!prompt){ showToast("Enter a prompt","error"); return; }
-  var sel=calls.filter(function(c){return selected.has(c.id);});
+  var sel=calls.filter(function(c){return selected.has(String(c.id));});
   var hsWithNotes=hsCalls.filter(function(c){return hsSelected.has(c.id)&&c.transcript;});
   var allSel=[].concat(sel,hsWithNotes);
   if(!allSel.length){ showToast("Select at least one call","error"); return; }
@@ -899,7 +899,7 @@ document.getElementById("saveBtn").addEventListener("click", saveSelected);
 document.getElementById("saveAllBtn").addEventListener("click", saveAllAsOne);
 document.getElementById("dbgBtn").addEventListener("click", showDebug);
 document.getElementById("lookupBtn").addEventListener("click", lookupCall);
-document.getElementById("selAll").addEventListener("click", function(){ calls.forEach(function(c){selected.add(c.id);}); updateBadge(); renderList(); });
+document.getElementById("selAll").addEventListener("click", function(){ calls.forEach(function(c){selected.add(String(c.id));}); updateBadge(); renderList(); });
 document.getElementById("selNone").addEventListener("click", function(){ selected.clear(); updateBadge(); renderList(); });
 document.getElementById("agentFilter").addEventListener("change", renderList);
 document.getElementById("hsFetchBtn").addEventListener("click", fetchHubSpotCalls);
@@ -913,8 +913,8 @@ document.getElementById("analyzeBtn").addEventListener("click", analyze);
 document.getElementById("viewBtn").addEventListener("click", viewSelected);
 document.getElementById("clearBtn").addEventListener("click", function(){ document.getElementById("analysisArea").innerHTML="<div class='welcome'><div class='welcome-title' style='font-size:16px;color:var(--text2)'>Ready for your next analysis</div></div>"; });
  
-document.getElementById("callList").addEventListener("click", function(e){ var item=e.target.closest(".call-item"); if(item){ var id=parseInt(item.dataset.id); if(selected.has(id)) selected.delete(id); else selected.add(id); updateBadge(); renderList(); } });
-document.getElementById("callList").addEventListener("dblclick", function(e){ var item=e.target.closest(".call-item"); if(item){ var id=parseInt(item.dataset.id); var c=calls.find(function(x){return x.id===id;}); if(c) openTranscriptModal(c); } });
+document.getElementById("callList").addEventListener("click", function(e){ var item=e.target.closest(".call-item"); if(item){ var id=item.dataset.id; if(selected.has(id)) selected.delete(id); else selected.add(id); updateBadge(); renderList(); } });
+document.getElementById("callList").addEventListener("dblclick", function(e){ var item=e.target.closest(".call-item"); if(item){ var id=item.dataset.id; var c=calls.find(function(x){return x.id===id;}); if(c) openTranscriptModal(c); } });
 document.getElementById("hsCallList").addEventListener("click", function(e){ var item=e.target.closest(".call-item"); if(item&&item.dataset.hsid){ var id=item.dataset.hsid; if(hsSelected.has(id)) hsSelected.delete(id); else hsSelected.add(id); updateBadge(); renderHsCallList(); } });
 document.getElementById("libCallList").addEventListener("click", function(e){ var item=e.target.closest(".call-item"); if(item&&item.dataset.libid){ var id=item.dataset.libid; if(libSelected.has(id)) libSelected.delete(id); else libSelected.add(id); renderLibList(); } });
 document.getElementById("libCallList").addEventListener("dblclick", function(e){ var item=e.target.closest(".call-item"); if(item&&item.dataset.libid){ var id=item.dataset.libid; var c=libCalls.find(function(x){return x.call_id===id;}); if(c){ var fc={id:c.call_id,started_at:new Date(c.started_at).getTime()/1000,duration:c.duration_seconds,direction:c.direction,contact:{name:c.contact_name},user:{name:c.agent_name},transcript:c.transcript}; openTranscriptModal(fc); } } });
