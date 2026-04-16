@@ -219,7 +219,7 @@ textarea { font-family: var(--sans); font-size: 13px; resize: none; line-height:
   </div>
   <div class="hdr-right">
     <span id="hdrStatus">not configured</span>
-    <button class="btn" id="cfgBtn" style="width:auto;padding:5px 12px;font-size:11px">Configure</button>
+    <button class="btn" id="cfgBtn" style="width:auto;padding:5px 12px;font-size:11px;opacity:0.4" title="Override API keys (optional)">Keys</button>
   </div>
 </header>
  
@@ -456,13 +456,7 @@ function saveCfg() {
 function updateStatus() {
   var el = document.getElementById("hdrStatus");
   if(!el) return;
-  if(cfg.aircallId && cfg.aircallToken && cfg.anthropicKey) {
-    el.innerHTML = "<span style='color:#2d7a3a;font-weight:600'>configured</span>";
-  } else if(cfg.aircallId && cfg.aircallToken) {
-    el.innerHTML = "<span style='color:#9a6700'>aircall only</span>";
-  } else {
-    el.textContent = "not configured";
-  }
+  el.innerHTML = "<span style='color:#2d7a3a;font-weight:600'>&#10003; connected</span>";
 }
  
 function openModal() { document.getElementById("cfgModal").classList.add("open"); }
@@ -545,9 +539,7 @@ document.addEventListener("click",function(e){ if(!e.target.closest(".cal-wrap")
  
 // ── AIRCALL API ────────────────────────────────────────────────────────────────
 async function aircallFetch(path) {
-  if(!cfg.aircallId||!cfg.aircallToken){ showToast("Configure Aircall credentials first","error"); openModal(); throw new Error("Missing credentials"); }
-  var creds = btoa(cfg.aircallId+":"+cfg.aircallToken);
-  var r = await fetch("/api/aircall?path="+encodeURIComponent(path), { headers:{"x-aircall-auth":creds} });
+  var r = await fetch("/api/aircall?path="+encodeURIComponent(path));
   return r;
 }
  
@@ -564,7 +556,6 @@ function extractTranscript(td) {
 }
  
 async function fetchCalls() {
-  if(!cfg.aircallId||!cfg.aircallToken){ showToast("Configure Aircall credentials first","error"); openModal(); return; }
   var btn=document.getElementById("fetchBtn"), txt=document.getElementById("fetchTxt");
   btn.disabled=true; txt.innerHTML="<span class='spinner spinner-dark'></span> Fetching...";
   var preset=document.getElementById("dateRangePreset").value;
@@ -754,7 +745,7 @@ async function fetchHubSpotCalls() {
   var days=parseInt(document.getElementById("hsDays").value);
   var filter=document.getElementById("hsFilter").value;
   try {
-    var res=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":cfg.anthropicKey,"anthropic-version":"2023-06-01"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,tools:[{type:"mcp",server_label:"hubspot",server_url:"https://mcp.hubspot.com/anthropic",allowed_tools:["search_crm_objects","get_crm_objects"]}],messages:[{role:"user",content:"Search HubSpot for call engagements from the last "+days+" days. For each call return: id, hs_call_title, hs_call_direction, hs_call_duration, hs_call_summary, hs_call_body, hs_timestamp. Return up to 50. Respond ONLY with a JSON array of call objects, no other text."}]})});
+    var res=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json","anthropic-version":"2023-06-01"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,tools:[{type:"mcp",server_label:"hubspot",server_url:"https://mcp.hubspot.com/anthropic",allowed_tools:["search_crm_objects","get_crm_objects"]}],messages:[{role:"user",content:"Search HubSpot for call engagements from the last "+days+" days. For each call return: id, hs_call_title, hs_call_direction, hs_call_duration, hs_call_summary, hs_call_body, hs_timestamp. Return up to 50. Respond ONLY with a JSON array of call objects, no other text."}]})});
     var data=await res.json();
     var text=(data.content||[]).filter(function(b){return b.type==="text";}).map(function(b){return b.text;}).join("");
     var parsed=[];
@@ -848,7 +839,6 @@ function renderLibList() {
  
 // ── ANALYZE ────────────────────────────────────────────────────────────────────
 async function analyze() {
-  if(!cfg.anthropicKey){ showToast("Configure Anthropic API key first","error"); openModal(); return; }
   var prompt=document.getElementById("promptInput").value.trim();
   if(!prompt){ showToast("Enter a prompt","error"); return; }
   var sel=calls.filter(function(c){return selected.has(c.id);});
@@ -870,7 +860,7 @@ async function analyze() {
   loader.innerHTML="<div class='result-hdr'><div class='result-dot' style='animation:pulse 1s ease-in-out infinite'></div><span class='result-title'>Analyzing "+withT.length+" transcript"+(withT.length>1?"s":"")+"...</span></div>";
   area.insertBefore(loader,area.firstChild); area.scrollTop=0;
   try {
-    var res=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":cfg.anthropicKey,"anthropic-version":"2023-06-01"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,messages:[{role:"user",content:full}]})});
+    var res=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json","anthropic-version":"2023-06-01"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,messages:[{role:"user",content:full}]})});
     if(!res.ok){ var e=await res.json().catch(function(){return{};}); throw new Error((e.error&&e.error.message)||"API error "+res.status); }
     var data=await res.json();
     var result=(data.content&&data.content[0]&&data.content[0].text)||"No response";
