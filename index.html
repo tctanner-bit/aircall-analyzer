@@ -818,25 +818,32 @@ async function lookupCall() {
  
 // ── HUBSPOT ────────────────────────────────────────────────────────────────────
 async function fetchHubSpotCalls() {
-  var btn=document.getElementById("hsFetchBtn"); btn.disabled=true; btn.innerHTML="<span class='spinner spinner-dark'></span> Fetching...";
+  var btn=document.getElementById("hsFetchBtn");
+  btn.disabled=true; btn.innerHTML="<span class='spinner spinner-dark'></span> Fetching...";
   var days=parseInt(document.getElementById("hsDays").value);
   var filter=document.getElementById("hsFilter").value;
   try {
-    var res=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json","anthropic-version":"2023-06-01"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,tools:[{type:"mcp",server_label:"hubspot",server_url:"https://mcp.hubspot.com/anthropic",allowed_tools:["search_crm_objects","get_crm_objects"]}],messages:[{role:"user",content:"Search HubSpot for call engagements from the last "+days+" days. For each call return: id, hs_call_title, hs_call_direction, hs_call_duration, hs_call_summary, hs_call_body, hs_timestamp. Return up to 50. Respond ONLY with a JSON array of call objects, no other text."}]})});
-    var data=await res.json();
-    var text=(data.content||[]).filter(function(b){return b.type==="text";}).map(function(b){return b.text;}).join("");
-    var parsed=[];
-    try { var m=text.match(/\[[\s\S]*\]/); if(m) parsed=JSON.parse(m[0]); } catch(e){ console.log("HubSpot response:",text); showToast("Could not parse HubSpot response","error"); return; }
-    hsCalls=parsed.map(function(c){
-      var summary=c.hs_call_summary||c.hs_call_body||(c.properties&&(c.properties.hs_call_summary||c.properties.hs_call_body))||"";
-      var direction=c.hs_call_direction||(c.properties&&c.properties.hs_call_direction)||"unknown";
-      var ts=c.hs_timestamp||(c.properties&&c.properties.hs_timestamp)||Date.now();
-      var title=c.hs_call_title||(c.properties&&c.properties.hs_call_title)||"HubSpot Call";
-      var dur_ms=parseInt(c.hs_call_duration||(c.properties&&c.properties.hs_call_duration)||0);
-      if(filter!=="all"&&direction.toLowerCase().indexOf(filter)===-1) return null;
-      return {id:"hs_"+(c.id||Math.random()),started_at:Math.floor(new Date(ts).getTime()/1000),duration:Math.floor(dur_ms/1000),direction:direction.toLowerCase().indexOf("inbound")>-1?"inbound":"outbound",contact:{name:title},user:{name:"HubSpot"},transcript:summary,_source:"hubspot"};
-    }).filter(Boolean);
-    hsSelected.clear(); renderHsCallList();
+    var r = await fetch("/api/hubspot?action=calls&days="+days);
+    if(!r.ok) { var e=await r.json(); throw new Error(e.error||"HubSpot error "+r.status); }
+    var data = await r.json();
+    var calls = data.calls || [];
+    if(filter !== "all") calls = calls.filter(function(c){ return c.direction === filter; });
+    hsCalls = calls.map(function(c) {
+      return {
+        id: "hs_" + c.id,
+        _hs_id: c.id,
+        started_at: Math.floor(new Date(c.timestamp).getTime()/1000),
+        duration: Math.floor((c.duration_ms||0)/1000),
+        direction: c.direction || "outbound",
+        contact: { name: c.title || "HubSpot Call" },
+        user: { name: c.agent_name || "Unknown" },
+        transcript: c.summary || "",
+        _has_transcript: c.has_transcript,
+        _source: "hubspot"
+      };
+    });
+    hsSelected.clear();
+    renderHsCallList();
     showToast("Loaded "+hsCalls.length+" HubSpot calls","success");
   } catch(ex){ showToast("Error: "+ex.message,"error"); console.error(ex); }
   finally{ btn.disabled=false; btn.innerHTML="Fetch HubSpot Calls"; }
