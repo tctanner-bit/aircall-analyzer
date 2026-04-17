@@ -436,45 +436,26 @@ textarea { font-family: var(--sans); font-size: 13px; resize: none; line-height:
 <script>
 // ── AUTH ──────────────────────────────────────────────────────────────────────
 var SESSION_KEY = "gl_analyzer_auth";
-var PASSWORD_HASH = null; // loaded from server
  
-async function checkAuth() {
-  // Check if already authenticated this session
+function checkAuth() {
   try {
-    var stored = sessionStorage.getItem(SESSION_KEY);
-    if (stored === "authenticated") {
+    if (sessionStorage.getItem(SESSION_KEY) === "authenticated") {
       document.getElementById("loginScreen").style.display = "none";
-      return;
-    }
-  } catch(e) {}
-  // Fetch the password hash from the server
-  try {
-    var r = await fetch("/api/auth");
-    if (r.ok) {
-      var d = await r.json();
-      PASSWORD_HASH = d.hash;
     }
   } catch(e) {}
 }
  
 async function submitLogin() {
-  var pw = document.getElementById("loginPassword").value;
+  var pw = document.getElementById("loginPassword").value.trim();
   var err = document.getElementById("loginError");
+  var btn = document.querySelector(".login-btn");
   if (!pw) { err.textContent = "Please enter the password"; return; }
  
-  // Hash the entered password and compare
-  var encoder = new TextEncoder();
-  var data = encoder.encode(pw);
-  var hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  var hashArray = Array.from(new Uint8Array(hashBuffer));
-  var hashHex = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+  btn.disabled = true;
+  btn.textContent = "Checking...";
+  err.textContent = "";
  
-  if (PASSWORD_HASH && hashHex === PASSWORD_HASH) {
-    try { sessionStorage.setItem(SESSION_KEY, "authenticated"); } catch(e) {}
-    document.getElementById("loginScreen").style.display = "none";
-    err.textContent = "";
-  } else if (!PASSWORD_HASH) {
-    // No hash configured — fall back to checking via server
+  try {
     var r = await fetch("/api/auth", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -483,16 +464,16 @@ async function submitLogin() {
     if (r.ok) {
       try { sessionStorage.setItem(SESSION_KEY, "authenticated"); } catch(e) {}
       document.getElementById("loginScreen").style.display = "none";
-      err.textContent = "";
     } else {
       err.textContent = "Incorrect password. Try again.";
       document.getElementById("loginPassword").value = "";
       document.getElementById("loginPassword").focus();
     }
-  } else {
-    err.textContent = "Incorrect password. Try again.";
-    document.getElementById("loginPassword").value = "";
-    document.getElementById("loginPassword").focus();
+  } catch(e) {
+    err.textContent = "Connection error. Please try again.";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Sign In";
   }
 }
  
