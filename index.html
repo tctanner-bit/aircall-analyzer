@@ -153,6 +153,21 @@ textarea { font-family: var(--sans); font-size: 13px; resize: none; line-height:
 .dbg-hdr { padding: 10px 14px; background: #fef9ee; border-bottom: 1px solid #f0c06a; font-size: 11px; font-weight: 700; color: #9a6700; border-radius: 10px 10px 0 0; }
 .dbg-body { padding: 14px; font-family: var(--mono); font-size: 11px; line-height: 1.6; color: var(--text2); white-space: pre-wrap; overflow-x: auto; }
  
+/* LOGIN */
+.login-screen { position: fixed; inset: 0; background: var(--bg); z-index: 1000; display: flex; align-items: center; justify-content: center; }
+.login-card { background: white; border: 1px solid var(--border); border-radius: 16px; padding: 40px; width: 380px; box-shadow: 0 8px 32px rgba(0,0,0,0.08); text-align: center; }
+.login-logo { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 28px; }
+.login-logo-mark { width: 36px; height: 36px; background: var(--orange); border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+.login-logo-mark svg { width: 20px; height: 20px; fill: white; }
+.login-logo-name { font-size: 20px; font-weight: 700; color: var(--dark); }
+.login-title { font-size: 15px; font-weight: 600; color: var(--dark); margin-bottom: 6px; }
+.login-sub { font-size: 13px; color: var(--text2); margin-bottom: 24px; }
+.login-input { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; color: var(--text); font-family: var(--sans); font-size: 14px; outline: none; margin-bottom: 12px; text-align: center; letter-spacing: 0.1em; }
+.login-input:focus { border-color: var(--orange); box-shadow: 0 0 0 3px rgba(232,97,26,0.1); }
+.login-btn { width: 100%; background: var(--orange); color: white; border: none; border-radius: 8px; padding: 12px; font-family: var(--sans); font-size: 14px; font-weight: 600; cursor: pointer; transition: background .15s; }
+.login-btn:hover { background: var(--orange2); }
+.login-error { font-size: 12px; color: #c0392b; margin-top: 10px; min-height: 18px; }
+ 
 /* CALENDAR */
 .cal-wrap { position: relative; }
 .cal-popup { display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 300; background: white; border: 1px solid var(--border2); border-radius: 10px; padding: 12px; width: 224px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
@@ -206,6 +221,23 @@ textarea { font-family: var(--sans); font-size: 13px; resize: none; line-height:
     <div class="modal-foot">
       <button class="btn btn-primary" id="tModalAnalyze" style="width:auto;padding:7px 16px">Analyze this call</button>
     </div>
+  </div>
+</div>
+ 
+<!-- LOGIN SCREEN -->
+<div class="login-screen" id="loginScreen">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="login-logo-mark">
+        <svg viewBox="0 0 16 16"><path d="M8 2C4.7 2 2 4.7 2 8s2.7 6 6 6 6-2.7 6-6-2.7-6-6-6zm0 2c.8 0 1.5.2 2.1.6L4.6 10.1C4.2 9.5 4 8.8 4 8c0-2.2 1.8-4 4-4zm0 8c-.8 0-1.5-.2-2.1-.6l5.5-5.5c.4.6.6 1.3.6 2.1 0 2.2-1.8 4-4 4z"/></svg>
+      </div>
+      <span class="login-logo-name">growlink</span>
+    </div>
+    <div class="login-title">Call Analyzer</div>
+    <div class="login-sub">Enter the team password to continue</div>
+    <input type="password" class="login-input" id="loginPassword" placeholder="Password" onkeydown="if(event.key==='Enter') submitLogin()">
+    <button class="login-btn" onclick="submitLogin()">Sign In</button>
+    <div class="login-error" id="loginError"></div>
   </div>
 </div>
  
@@ -402,6 +434,68 @@ textarea { font-family: var(--sans); font-size: 13px; resize: none; line-height:
 <div class="toast" id="toast"></div>
  
 <script>
+// ── AUTH ──────────────────────────────────────────────────────────────────────
+var SESSION_KEY = "gl_analyzer_auth";
+var PASSWORD_HASH = null; // loaded from server
+ 
+async function checkAuth() {
+  // Check if already authenticated this session
+  try {
+    var stored = sessionStorage.getItem(SESSION_KEY);
+    if (stored === "authenticated") {
+      document.getElementById("loginScreen").style.display = "none";
+      return;
+    }
+  } catch(e) {}
+  // Fetch the password hash from the server
+  try {
+    var r = await fetch("/api/auth");
+    if (r.ok) {
+      var d = await r.json();
+      PASSWORD_HASH = d.hash;
+    }
+  } catch(e) {}
+}
+ 
+async function submitLogin() {
+  var pw = document.getElementById("loginPassword").value;
+  var err = document.getElementById("loginError");
+  if (!pw) { err.textContent = "Please enter the password"; return; }
+ 
+  // Hash the entered password and compare
+  var encoder = new TextEncoder();
+  var data = encoder.encode(pw);
+  var hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  var hashArray = Array.from(new Uint8Array(hashBuffer));
+  var hashHex = hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+ 
+  if (PASSWORD_HASH && hashHex === PASSWORD_HASH) {
+    try { sessionStorage.setItem(SESSION_KEY, "authenticated"); } catch(e) {}
+    document.getElementById("loginScreen").style.display = "none";
+    err.textContent = "";
+  } else if (!PASSWORD_HASH) {
+    // No hash configured — fall back to checking via server
+    var r = await fetch("/api/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: pw })
+    });
+    if (r.ok) {
+      try { sessionStorage.setItem(SESSION_KEY, "authenticated"); } catch(e) {}
+      document.getElementById("loginScreen").style.display = "none";
+      err.textContent = "";
+    } else {
+      err.textContent = "Incorrect password. Try again.";
+      document.getElementById("loginPassword").value = "";
+      document.getElementById("loginPassword").focus();
+    }
+  } else {
+    err.textContent = "Incorrect password. Try again.";
+    document.getElementById("loginPassword").value = "";
+    document.getElementById("loginPassword").focus();
+  }
+}
+ 
 var calls = [], selected = new Set(), cfg = {}, lastDebug = null;
 var hsCalls = [], hsSelected = new Set();
 var libCalls = [], libSelected = new Set();
@@ -924,8 +1018,8 @@ document.getElementById("tModalAnalyze").addEventListener("click", function(){ d
 document.getElementById("analysisArea").addEventListener("click", function(e){ var sa=e.target.closest("[data-save-analysis]"); if(sa){ var txt=sa.closest(".result").querySelector(".result-body").textContent; var blob=new Blob([txt],{type:"text/plain"}); var url=URL.createObjectURL(blob); var a=document.createElement("a"); a.href=url; a.download="analysis_"+new Date().toISOString().split("T")[0]+".txt"; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); showToast("Saved","success"); } });
 document.querySelectorAll(".preset").forEach(function(btn){ btn.addEventListener("click", function(){ document.getElementById("promptInput").value=PRESETS[btn.dataset.p]; }); });
  
+checkAuth();
 loadCfg();
-if(!cfg.aircallId) setTimeout(openModal, 500);
  
 </script>
 </body>
